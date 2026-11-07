@@ -4,7 +4,7 @@
 // même sans réseau.
 // À CHAQUE NOUVELLE VERSION : changer le numéro ci-dessous.
 // =========================================================
-const CACHE = "tunnel-v0.1.0";
+const CACHE = "tunnel-v0.2.0";
 
 // Fichiers du jeu à garder dès l'installation
 const FICHIERS = ["./", "index.html", "style.css", "app.js", "manifest.json"];

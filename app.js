@@ -11,11 +11,14 @@
 //   4. dessine les cases visibles, puis le mineur et la poussière.
 // =========================================================
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 // ---------- 1. Réglages ----------
 
-const CASE = 3;                    // taille d'une case à l'écran (px)
+// Zoom : taille d'une case à l'écran, en px (1,5 = vue de loin ; 9 = tout près)
+const TAILLE_MIN = 1.5, TAILLE_MAX = 9;
+let taille = 3, tailleCible = 3;
+try { taille = tailleCible = Math.min(TAILLE_MAX, Math.max(TAILLE_MIN, +localStorage.getItem("tunnel-zoom") || 3)); } catch (e) {}
 const LARG = 256, PROF = 1600;     // taille du monde, en cases
 const N = LARG * PROF;
 
@@ -29,8 +32,11 @@ const RES = [];
 RES[TERRE] = 1; RES[ARGILE] = 2; RES[BASALTE] = 4; RES[SABLE] = 0.5;
 RES[CUIVRE] = 3; RES[OR] = 4; RES[CRISTAL] = 3; RES[FOSSILE] = 3; RES[RECHARGE] = 1.5;
 
-const PUISSANCE = 18;        // usure par seconde sous le doigt
-const RAYON_GRATTOIR = 1.8;  // taille du grattoir (en cases) : environ un ongle
+const PUISSANCE = 18;        // usure par seconde sous le doigt (au zoom normal)
+// Le grattoir garde toujours la même taille SOUS LE DOIGT (environ un ongle) :
+// de loin il couvre beaucoup de cases (large mais lent), de près peu de cases (fin mais rapide).
+const RAYON_ECRAN = 5.4;     // rayon du grattoir à l'écran (px)
+const RAYON_REF = 1.8;       // rayon en cases au zoom normal (3 px par case)
 const PORTEE = 22;           // distance max entre le mineur et le doigt (en cases)
 const PORTEE_LUMIERE = 90;   // jusqu'où porte la lampe
 const MEMOIRE = 0.26;        // luminosité des endroits déjà vus
@@ -186,34 +192,168 @@ function genererMonde() {
 }
 
 // ---------- 3. Le mineur ----------
-// Position = coin bas-gauche, en cases. Il occupe 5 cases de large et 7 de haut.
+// Position (x, y) = coin bas-gauche, en cases (avec des virgules pour un mouvement fluide).
+// Il occupe 5 cases de large et 7 de haut.
+// États : "sol" (posé), "air" (en vol ou en chute), "accroche" (grappin collé à la roche).
 
 const LM = 5, HM = 7;
-const mineur = { x: DEPART_X, y: DEPART_Y, vy: 0, chute: 0, sens: 1 };
+const GRAVITE = 90, CHUTE_MAX = 45, VITESSE_MARCHE = 14;
+const mineur = { x: DEPART_X, y: DEPART_Y, vx: 0, vy: 0, sens: 1, etat: "sol", cible: null };
 
-function solSous() {
-  for (let k = 0; k < LM; k++) if (solide(mineur.x + k, mineur.y)) return true;
+// Outil du lance-pierre : ce qui se passe quand le mineur lancé touche la roche
+let outil = "grappin";
+try { outil = localStorage.getItem("tunnel-outil") || "grappin"; } catch (e) {}
+
+// La boîte du mineur, placée en (x, y), toucherait-elle de la roche ?
+function occupe(x, y) {
+  const x0 = Math.floor(x + 1e-6), x1 = Math.ceil(x + LM - 1e-6) - 1;
+  const y0 = Math.floor(y - HM + 1e-6), y1 = Math.ceil(y - 1e-6) - 1;
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (solide(cx, cy)) return true;
+  return false;
+}
+const auSol = () => occupe(mineur.x, mineur.y + 0.05);
+// Encore collé à la roche ? (sinon le grappin lâche)
+const contreParoi = () => occupe(mineur.x - 0.3, mineur.y) || occupe(mineur.x + 0.3, mineur.y) ||
+                          occupe(mineur.x, mineur.y - 0.3) || auSol();
+
+// Outil « perce » : casse la terre et le sable autour du point d'impact (pas la roche dure)
+function percer(cx, cy) {
+  let casse = false;
+  for (let y = Math.floor(cy - 3); y <= cy + 3; y++) for (let x = Math.floor(cx - 3); x <= cx + 3; x++) {
+    if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 > 9 || !dansMonde(x, y)) continue;
+    const i = idx(x, y);
+    if (type[i] === TERRE || type[i] === SABLE) {
+      poussiere(x, y, couleurCase(x, y, type[i]));
+      type[i] = VIDE; usure[i] = 0; casse = true;
+    }
+  }
+  if (casse) { lumiereSale = true; vibrer(12); }
+  return casse;
+}
+
+function atterrir() {
+  const m = mineur;
+  m.etat = "sol"; m.vx = 0; m.vy = 0;
+  if (!occupe(m.x, Math.ceil(m.y - 1e-6))) m.y = Math.ceil(m.y - 1e-6); // bien posé sur la case
+}
+
+// Le mineur en vol touche la roche : la réaction dépend de l'outil.
+// axe = "x" (mur), "haut" (plafond) ou "bas" (sol). Renvoie true s'il peut continuer d'avancer.
+function choc(axe) {
+  const m = mineur;
+  if (axe === "bas" && !(outil === "rebond" && m.vy > 14)) { atterrir(); return false; }
+  if (outil === "grappin") { m.etat = "accroche"; m.vx = 0; m.vy = 0; vibrer(8); return false; }
+  if (outil === "rebond") {
+    if (axe === "x") m.vx = -m.vx * 0.55;
+    else { m.vy = -m.vy * 0.5; m.vx *= 0.8; }
+    vibrer(5);
+    return false;
+  }
+  // Perce : on casse devant soi ; si c'est de la roche dure, on s'arrête
+  const cx = m.x + LM / 2 + (axe === "x" ? Math.sign(m.vx) * 4 : 0);
+  const cy = m.y - HM / 2 + (axe === "haut" ? -5 : axe === "bas" ? 4 : 0);
+  if (percer(cx, cy)) { m.vx *= 0.6; m.vy *= 0.6; return true; }
+  if (axe === "x") m.vx = 0; else m.vy = 0;
   return false;
 }
 
-// Gravité : s'il n'a plus de sol, il tombe, case par case (pour ne jamais traverser la roche)
-function majMineur(dt) {
-  if (solSous()) { mineur.vy = 0; mineur.chute = 0; return; }
-  mineur.vy = Math.min(mineur.vy + 90 * dt, 45);
-  mineur.chute += mineur.vy * dt;
-  while (mineur.chute >= 1) {
-    if (solSous()) { mineur.chute = 0; mineur.vy = 0; break; }
-    mineur.y += 1;
-    mineur.chute -= 1;
-    lumiereSale = true;
+// Déplacement en vol, axe par axe et par petits morceaux (pour ne jamais traverser la roche)
+function deplacer(dx, dy) {
+  const m = mineur;
+  const n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 0.25));
+  const sx = dx / n, sy = dy / n;
+  for (let k = 0; k < n; k++) {
+    if (sx) {
+      if (!occupe(m.x + sx, m.y)) m.x += sx;
+      else if (!choc("x")) return;
+    }
+    if (m.etat !== "air") return;
+    if (sy) {
+      if (!occupe(m.x, m.y + sy)) m.y += sy;
+      else if (!choc(sy > 0 ? "bas" : "haut")) return;
+    }
+    if (m.etat !== "air") return;
   }
 }
 
+// Marche vers l'endroit touché ; monte tout seul les petites marches (1 ou 2 cases)
+function marcher(dt) {
+  const m = mineur;
+  const ecart = m.cible - (m.x + LM / 2);
+  if (Math.abs(ecart) < 0.6) { m.cible = null; return; }
+  const dir = Math.sign(ecart);
+  m.sens = dir;
+  const nx = m.x + Math.min(Math.abs(ecart), VITESSE_MARCHE * dt) * dir;
+  if (!occupe(nx, m.y)) { m.x = nx; return; }
+  for (let h = 1; h <= 2; h++) {
+    if (!occupe(m.x, m.y - h) && !occupe(nx, m.y - h)) { m.x = nx; m.y -= h; return; }
+  }
+  m.cible = null; // un vrai mur : il s'arrête
+}
+
+function majMineur(dt) {
+  const m = mineur;
+  const ax = Math.floor(m.x), ay = Math.floor(m.y);
+  if (m.etat === "accroche" && !contreParoi()) m.etat = "air"; // la roche a disparu : il tombe
+  if (m.etat === "sol") {
+    if (m.cible !== null) marcher(dt);
+    if (!auSol()) { m.etat = "air"; m.vx = 0; m.vy = 0; }
+  }
+  if (m.etat === "air") {
+    m.vy = Math.min(m.vy + GRAVITE * dt, CHUTE_MAX);
+    if (Math.abs(m.vx) > 1) m.sens = Math.sign(m.vx);
+    deplacer(m.vx * dt, m.vy * dt);
+    if (m.etat === "air" && m.vy >= 0 && auSol() && !(outil === "rebond" && m.vy > 14)) atterrir();
+  }
+  if (Math.floor(m.x) !== ax || Math.floor(m.y) !== ay) lumiereSale = true;
+}
+
+// ---------- 3 bis. Le lance-pierre ----------
+// On pose le doigt sur le mineur, on tire en arrière, on lâche : il part à l'opposé.
+
+const FORCE_LANCER = 6.5, VITESSE_LANCER_MAX = 100, VITESSE_LANCER_MIN = 14;
+
+function vitesseLancer(fx, fy) {
+  let vx = (centreMineurX() - fx) * FORCE_LANCER, vy = (centreMineurY() - fy) * FORCE_LANCER;
+  const v = Math.hypot(vx, vy);
+  if (v > VITESSE_LANCER_MAX) { vx *= VITESSE_LANCER_MAX / v; vy *= VITESSE_LANCER_MAX / v; }
+  return { vx, vy, v: Math.min(v, VITESSE_LANCER_MAX) };
+}
+
+function lancer(fx, fy) {
+  const l = vitesseLancer(fx, fy);
+  if (l.v < VITESSE_LANCER_MIN) return; // tiré trop peu : on annule
+  const m = mineur;
+  m.etat = "air"; m.vx = l.vx; m.vy = l.vy; m.cible = null;
+  vibrer(10);
+}
+
+// Trajet prévu (sans tenir compte de l'outil), pour afficher les pointillés
+function trajetPrevu(fx, fy) {
+  const l = vitesseLancer(fx, fy), pts = [];
+  if (l.v < VITESSE_LANCER_MIN) return pts;
+  let x = mineur.x, y = mineur.y, vx = l.vx, vy = l.vy;
+  for (let n = 0; n < 150; n++) {
+    vy = Math.min(vy + GRAVITE / 60, CHUTE_MAX);
+    x += vx / 60; y += vy / 60;
+    if (occupe(x, y)) break;
+    pts.push([x + LM / 2, y - HM / 2]);
+  }
+  return pts;
+}
+
+// Zone où poser le doigt pour attraper le mineur (un peu plus grande que lui, mais pas sous ses pieds,
+// pour qu'on puisse toujours creuser juste en dessous)
+function dansPrise(wx, wy) {
+  const marge = Math.max(2, 12 / taille); // au moins 12 px autour de lui, même vu de loin
+  return wx >= mineur.x - marge && wx <= mineur.x + LM + marge && wy >= mineur.y - HM - marge && wy <= mineur.y + 0.3;
+}
+
 // La lampe est sur le casque, côté où il regarde
-const lampeX = () => mineur.x + (mineur.sens > 0 ? LM - 1 : 0);
-const lampeY = () => mineur.y - HM + 1;
+const lampeX = () => Math.floor(mineur.x) + (mineur.sens > 0 ? LM - 1 : 0);
+const lampeY = () => Math.floor(mineur.y) - HM + 1;
 const centreMineurX = () => mineur.x + LM / 2;
-const centreMineurY = () => mineur.y + mineur.chute - HM / 2;
+const centreMineurY = () => mineur.y - HM / 2;
 
 // Dessin du mineur, ligne par ligne (une lettre = une couleur)
 const SPRITE = [
@@ -289,6 +429,7 @@ let derniereVibration = 0;
 function vibrer(ms) {
   const t = performance.now();
   if (t - derniereVibration < 70 || !navigator.vibrate) return;
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return; // pas encore touché l'écran
   derniereVibration = t;
   navigator.vibrate(ms);
 }
@@ -297,14 +438,16 @@ function vibrer(ms) {
 function gratter(px, py, dt) {
   const cmx = centreMineurX(), cmy = centreMineurY();
   if ((px - cmx) ** 2 + (py - cmy) ** 2 > PORTEE * PORTEE) return; // trop loin du mineur
-  const r = RAYON_GRATTOIR;
+  const r = Math.max(0.5, RAYON_ECRAN / taille);
+  // Équilibre : on enlève à peu près la même quantité de roche par seconde, quelle que soit la taille
+  const force = PUISSANCE * (RAYON_REF / r) ** 2;
   for (let y = Math.floor(py - r); y <= py + r; y++) {
     for (let x = Math.floor(px - r); x <= px + r; x++) {
       const d = Math.hypot(x + 0.5 - px, y + 0.5 - py);
       if (d > r || !dansMonde(x, y)) continue;
       const i = idx(x, y), t = type[i];
       if (t === VIDE || t === EAU || t === SOCLE) continue;
-      usure[i] += dt * PUISSANCE * (d < r * 0.6 ? 1 : 0.6);
+      usure[i] += dt * force * (d < r * 0.6 ? 1 : 0.6);
       if (usure[i] >= RES[t]) {
         type[i] = VIDE;
         usure[i] = 0;
@@ -319,7 +462,8 @@ function gratter(px, py, dt) {
 // Gratte le long du trajet du doigt depuis la dernière image (pour ne pas sauter de cases si on va vite)
 function gratterTrajet(ax, ay, bx, by, dt) {
   const longueur = Math.hypot(bx - ax, by - ay);
-  const n = Math.max(1, Math.ceil(longueur / 0.8));
+  const pas = Math.min(0.8, Math.max(0.5, RAYON_ECRAN / taille)); // jamais plus grand que le grattoir
+  const n = Math.max(1, Math.ceil(longueur / pas));
   const part = Math.max(dt / n, dt * 0.35);
   for (let k = 1; k <= n; k++) gratter(ax + (bx - ax) * k / n, ay + (by - ay) * k / n, part);
 }
@@ -353,43 +497,86 @@ let modeRegard = false, decalX = 0, decalY = 0, attenteRetour = 0, milieuAvant =
 let camX = 0, camY = 0;
 
 // Position du doigt sur l'écran → position dans le monde (en cases)
-const versMondeX = px => camX + px / CASE;
-const versMondeY = py => camY + py / CASE;
+const versMondeX = px => camX + px / taille;
+const versMondeY = py => camY + py / taille;
+let ecartAvant = null; // écart entre les deux doigts à l'image précédente (pour le pincer-zoomer)
+
+// Le geste en cours avec un seul doigt :
+//   "lancer"  = le doigt a été posé sur le mineur (lance-pierre),
+//   "gratter" = ailleurs. Un toucher court sans bouger sur un endroit creusé = « va là ».
+let geste = null;
+const DUREE_TAP = 250; // ms
 
 ecran.addEventListener("pointerdown", e => {
   try { ecran.setPointerCapture(e.pointerId); } catch (err) {} // le doigt reste « attaché » au jeu même s'il sort de l'écran
   doigts.set(e.pointerId, { x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY });
-  if (doigts.size >= 2) modeRegard = true; // dès le 2e doigt, on regarde au lieu de gratter
+  if (doigts.size >= 2) { modeRegard = true; geste = null; return; } // dès le 2e doigt, on regarde au lieu de gratter
+  const wx = versMondeX(e.clientX), wy = versMondeY(e.clientY);
+  if (mineur.etat !== "air" && dansPrise(wx, wy)) geste = { type: "lancer", id: e.pointerId };
+  else geste = {
+    type: "gratter", id: e.pointerId, t0: performance.now(), x0: e.clientX, y0: e.clientY, bouge: false,
+    // Si on touche un endroit déjà creusé, ce sera peut-être un « va là » : on attend un peu avant de gratter
+    surVide: typeA(Math.floor(wx), Math.floor(wy)) === VIDE
+  };
 });
 ecran.addEventListener("pointermove", e => {
   const d = doigts.get(e.pointerId);
   if (d) { d.x = e.clientX; d.y = e.clientY; }
+  if (geste && geste.type === "gratter" && geste.id === e.pointerId && !geste.bouge &&
+      Math.hypot(e.clientX - geste.x0, e.clientY - geste.y0) > 8) geste.bouge = true;
 });
 function doigtLeve(e) {
+  if (geste && geste.id === e.pointerId && !modeRegard) {
+    const wx = versMondeX(e.clientX), wy = versMondeY(e.clientY);
+    if (geste.type === "lancer") lancer(wx, wy);
+    else if (!geste.bouge && performance.now() - geste.t0 < DUREE_TAP) allerA(wx, wy);
+  }
+  if (geste && geste.id === e.pointerId) geste = null;
   doigts.delete(e.pointerId);
   if (doigts.size === 0) {
-    if (modeRegard) attenteRetour = 1.2; // on laisse un peu le regard là où il est, puis la caméra revient
+    if (modeRegard) { attenteRetour = 1.2; sauverZoom(); } // on laisse un peu le regard là où il est, puis la caméra revient
     modeRegard = false;
     milieuAvant = null;
+    ecartAvant = null;
   }
 }
 ecran.addEventListener("pointerup", doigtLeve);
 ecran.addEventListener("pointercancel", doigtLeve);
 ecran.addEventListener("contextmenu", e => e.preventDefault());
 
+// « Va là » : un toucher court sur un endroit creusé
+function allerA(wx, wy) {
+  const t = typeA(Math.floor(wx), Math.floor(wy));
+  if (t !== VIDE && t !== EAU) return;
+  if (mineur.etat === "accroche") { mineur.etat = "air"; mineur.vx = 0; mineur.vy = 0; } // il lâche la paroi
+  mineur.cible = wx;
+}
+
 function majEntrees(dt) {
-  if (!modeRegard && doigts.size === 1) {
+  if (!modeRegard && doigts.size === 1 && geste && geste.type === "gratter") {
     const d = doigts.values().next().value;
-    gratterTrajet(versMondeX(d.px), versMondeY(d.py), versMondeX(d.x), versMondeY(d.y), dt);
+    const pret = !geste.surVide || geste.bouge || performance.now() - geste.t0 >= DUREE_TAP;
+    if (pret) gratterTrajet(versMondeX(d.px), versMondeY(d.py), versMondeX(d.x), versMondeY(d.y), dt);
     d.px = d.x; d.py = d.y;
   }
   if (modeRegard && doigts.size >= 2) {
     const [a, b] = [...doigts.values()];
     const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    if (milieuAvant) { decalX -= (m.x - milieuAvant.x) / CASE; decalY -= (m.y - milieuAvant.y) / CASE; }
+    const ecart = Math.hypot(a.x - b.x, a.y - b.y);
+    // Écarter / rapprocher les doigts = zoomer, autour du point entre les deux doigts
+    if (ecartAvant && ecart > 20) { zoomerVers(taille * ecart / ecartAvant, m.x, m.y); tailleCible = taille; }
+    ecartAvant = ecart;
+    // Déplacer les deux doigts = regarder ailleurs
+    if (milieuAvant) { decalX -= (m.x - milieuAvant.x) / taille; decalY -= (m.y - milieuAvant.y) / taille; }
     milieuAvant = m;
   } else {
     milieuAvant = null;
+    ecartAvant = null;
+  }
+  // Zoom doux avec les boutons + / − (centré sur le mineur)
+  if (Math.abs(tailleCible - taille) > 0.002) {
+    const t = taille + (tailleCible - taille) * (1 - Math.exp(-dt * 12));
+    zoomerVers(t, (centreMineurX() - camX) * taille, (centreMineurY() - camY) * taille);
   }
   if (!modeRegard) {
     if (attenteRetour > 0) attenteRetour -= dt;
@@ -402,19 +589,40 @@ function majEntrees(dt) {
 let largVue = 0, hautVue = 0, vueL = 0, vueH = 0, image = null;
 
 function redimensionner() {
-  largVue = innerWidth / CASE; hautVue = innerHeight / CASE;
+  largVue = innerWidth / taille; hautVue = innerHeight / taille;
   // Une case de plus de chaque côté pour pouvoir glisser en douceur entre deux cases
-  vueL = Math.ceil(largVue) + 1; vueH = Math.ceil(hautVue) + 1;
-  ecran.width = vueL; ecran.height = vueH;
-  ecran.style.width = vueL * CASE + "px";
-  ecran.style.height = vueH * CASE + "px";
-  image = ctx.createImageData(vueL, vueH);
+  const l = Math.ceil(largVue) + 1, h = Math.ceil(hautVue) + 1;
+  if (l !== vueL || h !== vueH || !image) {
+    vueL = l; vueH = h;
+    ecran.width = vueL; ecran.height = vueH;
+    image = ctx.createImageData(vueL, vueH);
+  }
+  ecran.style.width = vueL * taille + "px";
+  ecran.style.height = vueH * taille + "px";
 }
 
+// Change le zoom en gardant immobile le point de l'écran (ax, ay) — sous les doigts ou sur le mineur
+function zoomerVers(nouvelle, ax, ay) {
+  nouvelle = Math.min(TAILLE_MAX, Math.max(TAILLE_MIN, nouvelle));
+  const wx = camX + ax / taille, wy = camY + ay / taille;
+  taille = nouvelle;
+  redimensionner();
+  camX = wx - ax / taille; camY = wy - ay / taille;
+  // La caméra suit une « cible » : on la décale pour qu'elle corresponde à la nouvelle vue
+  const c = cibleCamera();
+  decalX += camX - c.x; decalY += camY - c.y;
+}
+
+function sauverZoom() {
+  try { localStorage.setItem("tunnel-zoom", String(tailleCible.toFixed(2))); } catch (e) {}
+}
+
+// La caméra vise le mineur (un peu au-dessus du milieu de l'écran), plus le décalage du regard
 function cibleCamera() {
+  const bord = (v, vue, total) => total <= vue ? (total - vue) / 2 : Math.min(Math.max(v, 0), total - vue);
   return {
-    x: Math.min(Math.max(centreMineurX() - largVue / 2 + decalX, 0), LARG - largVue),
-    y: Math.min(Math.max(centreMineurY() - hautVue * 0.45 + decalY, 0), PROF - hautVue)
+    x: bord(centreMineurX() - largVue / 2 + decalX, largVue, LARG),
+    y: bord(centreMineurY() - hautVue * 0.45 + decalY, hautVue, PROF)
   };
 }
 
@@ -501,7 +709,7 @@ function dessiner(temps, dt) {
   ctx.putImageData(image, 0, 0);
 
   // Le mineur
-  const mx0 = mineur.x - ox, my0 = Math.round(mineur.y + mineur.chute) - HM - oy;
+  const mx0 = Math.round(mineur.x) - ox, my0 = Math.round(mineur.y) - HM - oy;
   for (let ly = 0; ly < HM; ly++) {
     for (let lx = 0; lx < LM; lx++) {
       const ch = SPRITE[ly][mineur.sens > 0 ? lx : LM - 1 - lx];
@@ -519,8 +727,29 @@ function dessiner(temps, dt) {
   }
   ctx.globalAlpha = 1;
 
+  // Lance-pierre en cours : élastique + début du trajet (seulement le début : la suite, c'est à l'œil)
+  if (geste && geste.type === "lancer" && !modeRegard) {
+    const d = doigts.get(geste.id);
+    if (d) {
+      const fx = versMondeX(d.x), fy = versMondeY(d.y);
+      ctx.fillStyle = "rgba(205,150,105,0.9)";
+      for (const bx of [mineur.x, mineur.x + LM]) { // deux brins d'élastique, des mains au doigt
+        const by = mineur.y - 4, n = Math.ceil(Math.hypot(fx - bx, fy - by));
+        for (let k = 0; k <= n; k++) ctx.fillRect(Math.floor(bx + (fx - bx) * k / n) - ox, Math.floor(by + (fy - by) * k / n) - oy, 1, 1);
+      }
+      const pts = trajetPrevu(fx, fy), lim = Math.floor(pts.length * 0.35);
+      for (let k = 2; k < lim; k += 3) {
+        ctx.globalAlpha = 0.85 * (1 - k / lim) + 0.1;
+        ctx.fillStyle = "#fff0dc";
+        ctx.fillRect(Math.floor(pts[k][0]) - ox, Math.floor(pts[k][1]) - oy, 1, 1);
+      }
+      ctx.globalAlpha = 1;
+      if (pts.length) mineur.sens = fx > centreMineurX() ? -1 : 1; // il regarde vers où il va partir
+    }
+  }
+
   // Décalage fin entre deux cases, pour un défilement fluide
-  ecran.style.transform = "translate(" + (-(camX - ox) * CASE).toFixed(2) + "px," + (-(camY - oy) * CASE).toFixed(2) + "px)";
+  ecran.style.transform = "translate(" + (-(camX - ox) * taille).toFixed(2) + "px," + (-(camY - oy) * taille).toFixed(2) + "px)";
 }
 
 // ---------- 10. Boucle du jeu ----------
@@ -543,13 +772,42 @@ function boucle(ms) {
   dessiner(temps, dt);
 
   // Profondeur : 10 cases = 1 mètre
-  const prof = Math.max(0, Math.round((mineur.y - DEPART_Y) / 10));
+  const prof = Math.max(0, Math.round((Math.floor(mineur.y) - DEPART_Y) / 10));
   if (prof !== profAffichee) { profAffichee = prof; affProfondeur.textContent = prof + " m"; }
 
   requestAnimationFrame(boucle);
 }
 
 // ---------- 11. Démarrage ----------
+
+// Boutons d'outils : petits dessins en pixels (x, y, largeur, hauteur sur une grille de 14)
+const DESSINS_OUTILS = {
+  grappin: [[6, 2, 2, 7], [5, 2, 4, 1], [4, 9, 2, 1], [3, 7, 1, 3], [8, 9, 2, 1], [10, 7, 1, 3]],
+  rebond: [[2, 11, 10, 1], [5, 4, 4, 4], [4, 5, 1, 2], [9, 5, 1, 2], [2, 3, 1, 1], [1, 6, 1, 1], [11, 2, 1, 1]],
+  perce: [[3, 3, 8, 1], [2, 4, 2, 1], [10, 4, 2, 1], [6, 4, 2, 8]]
+};
+function majBoutonsOutils() {
+  for (const b of document.querySelectorAll("#outils button")) b.classList.toggle("actif", b.dataset.outil === outil);
+}
+for (const b of document.querySelectorAll("#outils button")) {
+  b.innerHTML = '<svg viewBox="0 0 14 14" aria-hidden="true">' +
+    DESSINS_OUTILS[b.dataset.outil].map(([x, y, w, h]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="currentColor"/>`).join("") +
+    "</svg>";
+  b.addEventListener("click", () => {
+    outil = b.dataset.outil;
+    try { localStorage.setItem("tunnel-outil", outil); } catch (e) {}
+    majBoutonsOutils();
+  });
+}
+majBoutonsOutils();
+
+// Boutons de zoom : chaque appui rapproche ou éloigne d'un cran (×1,3), en douceur
+for (const b of document.querySelectorAll("#zoom button")) {
+  b.addEventListener("click", () => {
+    tailleCible = Math.min(TAILLE_MAX, Math.max(TAILLE_MIN, tailleCible * (b.dataset.zoom > 0 ? 1.3 : 1 / 1.3)));
+    sauverZoom();
+  });
+}
 
 genererMonde();
 redimensionner();

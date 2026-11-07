@@ -14,6 +14,19 @@
   <!-- Le jeu entier est dessiné dans ce « tableau » (canvas) -->
   <canvas id="jeu"></canvas>
 
+  <!-- Outils du lance-pierre, en haut à droite (les dessins sont ajoutés par app.js) -->
+  <div id="outils">
+    <button data-outil="grappin" aria-label="Grappin : s'accroche à la roche"></button>
+    <button data-outil="rebond" aria-label="Rebond : rebondit sur la roche"></button>
+    <button data-outil="perce" aria-label="Perce : casse la terre et le sable"></button>
+  </div>
+
+  <!-- Zoom (on peut aussi pincer à deux doigts) -->
+  <div id="zoom">
+    <button data-zoom="-1" aria-label="Voir de plus loin"><svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="2" fill="currentColor"/></svg></button>
+    <button data-zoom="1" aria-label="Voir de plus près"><svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="2" fill="currentColor"/><rect x="6" y="3" width="2" height="8" fill="currentColor"/></svg></button>
+  </div>
+
   <!-- Profondeur, discrète en bas de l'écran -->
   <div id="profondeur">0 m</div>
   <div id="version"></div>
