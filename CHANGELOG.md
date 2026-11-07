@@ -1,5 +1,13 @@
 # Tunnel — journal des nouveautés
 
+## 0.4.0 — 2026-11-07
+- Le sable s'écroule quand on creuse dessous (il glisse aussi en biais). S'il tombe sur le mineur, il est coincé jusqu'à ce qu'on le dégage.
+- L'eau coule vraiment : elle descend, s'étale et se met à niveau, et continue de couler même quand on ne touche plus l'écran. Si elle atteint le mineur, il revient à la dernière corniche sûre (ou au départ).
+- Gouttes qui tombent du plafond près des poches d'eau (indice), grondement et vibration quand ça se met à couler.
+- Mineur plus agile : marche 2 fois plus vite, boîte de collision aux coins arrondis (il ne se coince plus sur les petites bosses), enjambe les marches, suit les petites descentes, contourne les coins en vol.
+- Grappin : contre un mur, il glisse doucement vers le bas (saut de mur possible) ; au plafond, il pend toujours.
+- Zoom jusqu'à 24 px par bloc.
+
 ## 0.3.0 — 2026-11-07
 - Nouveau mineur « mignon » (grosse tête, grands yeux), plus petit : 2 × 3 blocs, dessiné finement (4 × 4 pixels par bloc) sur un calque net. Il est « rebondi » : s'aplatit en atterrissant, s'étire en vol, sautille en marchant, respire au repos.
 - Blocs avec un grain fin et des arêtes douces au bord des galeries (visibles en zoomant).

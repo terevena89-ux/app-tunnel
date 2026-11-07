@@ -11,12 +11,12 @@
 //   4. dessine les cases visibles, puis le mineur et la poussière.
 // =========================================================
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 // ---------- 1. Réglages ----------
 
-// Zoom : taille d'une case à l'écran, en px (1,5 = vue de loin ; 9 = tout près)
-const TAILLE_MIN = 1.5, TAILLE_MAX = 9;
+// Zoom : taille d'une case à l'écran, en px (1,5 = vue de loin ; 24 = tout près)
+const TAILLE_MIN = 1.5, TAILLE_MAX = 24;
 let taille = 4.5, tailleCible = 4.5;
 try { taille = tailleCible = Math.min(TAILLE_MAX, Math.max(TAILLE_MIN, +localStorage.getItem("tunnel-zoom") || 4.5)); } catch (e) {}
 const LARG = 256, PROF = 1600;     // taille du monde, en cases
@@ -172,7 +172,7 @@ function genererMonde() {
   for (let n = 0; n < 16; n++) tache(entre(4, LARG - 4), entre(80, 1490), 1.5, RECHARGE);
   // Grottes naturelles, rares et grandes
   for (let n = 0; n < 9; n++) grotte(entre(30, LARG - 30), entre(110, 1440), entre(18, 34), entre(9, 16));
-  // Poches d'eau (immobiles pour l'instant : l'eau qui coule arrivera à l'étape 3)
+  // Poches d'eau (elles se vident dans les galeries quand on les perce)
   for (let n = 0; n < 14; n++) {
     const cx = entre(15, LARG - 15), cy = entre(100, 1480), rx = entre(5, 12), ry = entre(3, 6);
     for (let y = Math.floor(cy - ry); y <= cy + ry; y++) for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
@@ -189,21 +189,29 @@ function genererMonde() {
     const bord = (x - DEPART_X - 2.5) ** 2 / 110 + (y - DEPART_Y + 7) ** 2 / 55;
     if (bord < 1) type[idx(x, y)] = VIDE;
   }
+  // Les poches d'eau sont pleines
+  for (let i = 0; i < N; i++) if (type[i] === EAU) eauNiv[i] = 1;
 }
 
 // ---------- 3. Le mineur ----------
 // Position (x, y) = coin bas-gauche, en cases (avec des virgules pour un mouvement fluide).
 // Il occupe 2 cases de large et 3 de haut ; il est dessiné en 8 × 12 « petits pixels »
 // (chaque case = 4 × 4 petits pixels), sur un calque à part pour rester net.
-// États : "sol" (posé), "air" (en vol ou en chute), "accroche" (grappin collé à la roche).
+// États : "sol" (posé), "air" (en vol ou en chute), "glisse" (grappin contre un mur, il glisse),
+//         "accroche" (grappin planté au plafond, il pend).
 
 const LM = 2, HM = 3;
-const GRAVITE = 90, CHUTE_MAX = 45, VITESSE_MARCHE = 11, SAUT = 25;
+// Sa « boîte de collision » est un peu plus petite que son dessin (coins arrondis),
+// pour qu'il passe là où, à l'œil, ça doit passer.
+const MARGE_COTE = 0.25, MARGE_HAUT = 0.35;
+const GRAVITE = 90, CHUTE_MAX = 45, VITESSE_MARCHE = 22, SAUT = 25, VITESSE_GLISSE = 5;
 const mineur = {
   x: DEPART_X, y: DEPART_Y, vx: 0, vy: 0, sens: 1, etat: "sol", cible: null,
   controleAir: false,          // en saut « au clavier », on peut diriger en l'air
   ecrase: 0,                   // aplatissement à l'atterrissage (0 à 1), pour l'effet « rebondi »
-  pas: 0                       // compteur pour l'animation de marche
+  pas: 0,                      // compteur pour l'animation de marche
+  murSens: 0,                  // côté du mur contre lequel il glisse (-1 / 1)
+  coince: false                // du sable lui est tombé dessus
 };
 let dirTouche = 0;             // -1 gauche, 1 droite (touches du clavier ou boutons à l'écran)
 
@@ -213,15 +221,13 @@ try { outil = localStorage.getItem("tunnel-outil") || "grappin"; } catch (e) {}
 
 // La boîte du mineur, placée en (x, y), toucherait-elle de la roche ?
 function occupe(x, y) {
-  const x0 = Math.floor(x + 1e-6), x1 = Math.ceil(x + LM - 1e-6) - 1;
-  const y0 = Math.floor(y - HM + 1e-6), y1 = Math.ceil(y - 1e-6) - 1;
+  const x0 = Math.floor(x + MARGE_COTE + 1e-6), x1 = Math.ceil(x + LM - MARGE_COTE - 1e-6) - 1;
+  const y0 = Math.floor(y - HM + MARGE_HAUT + 1e-6), y1 = Math.ceil(y - 1e-6) - 1;
   for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (solide(cx, cy)) return true;
   return false;
 }
 const auSol = () => occupe(mineur.x, mineur.y + 0.05);
-// Encore collé à la roche ? (sinon le grappin lâche)
-const contreParoi = () => occupe(mineur.x - 0.3, mineur.y) || occupe(mineur.x + 0.3, mineur.y) ||
-                          occupe(mineur.x, mineur.y - 0.3) || auSol();
+const peutLancer = () => mineur.etat !== "air" && !mineur.coince;
 
 // Outil « perce » : casse la terre et le sable autour du point d'impact (pas la roche dure)
 function percer(cx, cy) {
@@ -253,7 +259,14 @@ function choc(axe) {
     return false;
   }
   if (axe === "bas" && !(outil === "rebond" && m.vy > 14)) { atterrir(); return false; }
-  if (outil === "grappin") { m.etat = "accroche"; m.vx = 0; m.vy = 0; m.ecrase = 0.5; vibrer(8); sonChoc(); return false; }
+  if (outil === "grappin") {
+    if (axe === "x") { // contre un mur : il glisse doucement vers le bas
+      m.murSens = Math.sign(m.vx) || m.sens;
+      m.etat = "glisse"; m.vx = 0; m.vy = Math.min(Math.max(m.vy, -8), VITESSE_GLISSE);
+    } else { m.etat = "accroche"; m.vx = 0; m.vy = 0; } // au plafond : il pend
+    m.ecrase = 0.4; vibrer(8); sonChoc();
+    return false;
+  }
   if (outil === "rebond") {
     if (axe === "x") m.vx = -m.vx * 0.55;
     else { m.vy = -m.vy * 0.5; m.vx *= 0.8; }
@@ -268,7 +281,8 @@ function choc(axe) {
   return false;
 }
 
-// Déplacement en vol, axe par axe et par petits morceaux (pour ne jamais traverser la roche)
+// Déplacement en vol, axe par axe et par petits morceaux (pour ne jamais traverser la roche).
+// Si un coin de roche gêne un tout petit peu, on le contourne (au lieu de rester bloqué).
 function deplacer(dx, dy) {
   const m = mineur;
   const n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 0.25));
@@ -276,37 +290,54 @@ function deplacer(dx, dy) {
   for (let k = 0; k < n; k++) {
     if (sx) {
       if (!occupe(m.x + sx, m.y)) m.x += sx;
-      else if (!choc("x")) return;
+      else {
+        let contourne = false;
+        for (const d of [-0.5, -1, 0.5]) if (!occupe(m.x + sx, m.y + d) && !occupe(m.x, m.y + d)) { m.y += d; m.x += sx; contourne = true; break; }
+        if (!contourne && !choc("x")) return;
+      }
     }
     if (m.etat !== "air") return;
     if (sy) {
       if (!occupe(m.x, m.y + sy)) m.y += sy;
-      else if (!choc(sy > 0 ? "bas" : "haut")) return;
+      else {
+        let contourne = false;
+        if (sy < 0) for (const d of [0.5, -0.5]) if (!occupe(m.x + d, m.y + sy) && !occupe(m.x + d, m.y)) { m.x += d; m.y += sy; contourne = true; break; }
+        if (!contourne && !choc(sy > 0 ? "bas" : "haut")) return;
+      }
     }
     if (m.etat !== "air") return;
   }
 }
 
-// Marche vers la cible ; monte tout seul les marches d'une case
+// Marche vers la cible ; monte tout seul les marches d'une case et contourne les petits coins
 function marcher(dt) {
   const m = mineur;
   const ecart = m.cible - (m.x + LM / 2);
   if (Math.abs(ecart) < 0.3) { m.cible = null; return; }
   const dir = Math.sign(ecart);
   m.sens = dir;
-  const nx = m.x + Math.min(Math.abs(ecart), VITESSE_MARCHE * dt) * dir;
   m.pas += dt;
-  if (!occupe(nx, m.y)) { m.x = nx; return; }
-  if (!occupe(m.x, m.y - 1) && !occupe(nx, m.y - 1)) { m.x = nx; m.y -= 1; m.ecrase = 0.25; return; }
-  m.cible = null; // un vrai mur : il s'arrête
+  let reste = Math.min(Math.abs(ecart), VITESSE_MARCHE * dt);
+  while (reste > 0) { // petits pas (vite, mais sans traverser de mur)
+    const p = Math.min(0.4, reste); reste -= p;
+    const nx = m.x + p * dir;
+    if (!occupe(nx, m.y)) { m.x = nx; continue; }
+    let passe = false;
+    for (const h of [0.5, 1, 1.4]) { // marche (ou bosse) à enjamber
+      if (!occupe(m.x, m.y - h) && !occupe(nx, m.y - h)) { m.x = nx; m.y -= h; m.ecrase = Math.max(m.ecrase, 0.2); passe = true; break; }
+    }
+    if (!passe) { m.cible = null; return; } // un vrai mur : il s'arrête
+  }
 }
 
 // Saut (touche haut / espace, ou bouton à l'écran)
 function sauter() {
   const m = mineur;
-  if (m.etat === "air") return;
+  if (m.coince || m.etat === "air") return;
   if (m.etat === "sol" && !auSol()) return;
-  m.etat = "air"; m.vy = -SAUT; m.vx = dirTouche * VITESSE_MARCHE; m.cible = null; m.controleAir = true;
+  if (m.etat === "glisse") { m.vx = -m.murSens * VITESSE_MARCHE; m.sens = -m.murSens; } // saut de mur
+  else m.vx = dirTouche * VITESSE_MARCHE;
+  m.etat = "air"; m.vy = -SAUT; m.cible = null; m.controleAir = true;
   m.ecrase = -0.4; // il s'étire en partant
   sonSaut();
 }
@@ -314,12 +345,30 @@ function sauter() {
 function majMineur(dt) {
   const m = mineur;
   const ax = Math.floor(m.x), ay = Math.floor(m.y);
-  if (m.etat === "accroche" && !contreParoi()) m.etat = "air"; // la roche a disparu : il tombe
+  // Du sable lui est tombé dessus : il est coincé tant qu'on ne l'a pas dégagé
+  m.coince = occupe(m.x, m.y);
+  if (m.coince) { m.vx = 0; m.vy = 0; m.cible = null; return; }
+  if (m.etat === "accroche" && !occupe(m.x, m.y - 0.3)) m.etat = "air"; // le plafond a disparu
+  if (m.etat === "glisse") {
+    if (!occupe(m.x + m.murSens * 0.3, m.y)) m.etat = "air"; // plus de mur : il tombe
+    else {
+      m.vy += (VITESSE_GLISSE - m.vy) * Math.min(1, dt * 6);
+      const ny = m.y + m.vy * dt;
+      if (occupe(m.x, ny)) { if (m.vy > 0) atterrir(); else m.vy = 0; }
+      else m.y = ny;
+      m.sens = -m.murSens;
+    }
+  }
   if (m.etat === "sol") {
     if (dirTouche) m.cible = m.x + LM / 2 + dirTouche * 2; // touche maintenue : il avance
     if (m.cible !== null) marcher(dt);
     else m.pas = 0;
-    if (!auSol()) { m.etat = "air"; m.vx = 0; m.vy = 0; }
+    if (!auSol()) {
+      // Petite descente : il la suit au lieu de « tomber »
+      let colle = false;
+      for (const h of [0.5, 1]) if (occupe(m.x, m.y + h + 0.05) && !occupe(m.x, m.y + h)) { m.y += h; colle = true; break; }
+      if (!colle) { m.etat = "air"; m.vx = 0; m.vy = 0; }
+    }
   }
   if (m.etat === "air") {
     m.vy = Math.min(m.vy + GRAVITE * dt, CHUTE_MAX);
@@ -331,6 +380,159 @@ function majMineur(dt) {
   // L'aplatissement revient doucement à la normale (effet ressort)
   m.ecrase += (0 - m.ecrase) * Math.min(1, dt * 9);
   if (Math.floor(m.x) !== ax || Math.floor(m.y) !== ay) lumiereSale = true;
+  noteCorniche(dt);
+  if (dansLEau()) retourCorniche();
+}
+
+// ---------- 3 ter. Dernière corniche ----------
+// On retient régulièrement les endroits sûrs (posé, au sec) où il est passé.
+// Si l'eau l'atteint, il y revient.
+
+const corniches = [];
+let tempsCorniche = 0;
+function eauDansBoite(x, y, seuil) {
+  for (let cy = Math.floor(y - HM); cy < Math.ceil(y); cy++)
+    for (let cx = Math.floor(x + MARGE_COTE); cx < Math.ceil(x + LM - MARGE_COTE); cx++)
+      if (typeA(cx, cy) === EAU && eauNiv[idx(cx, cy)] > seuil) return true;
+  return false;
+}
+const dansLEau = () => eauDansBoite(mineur.x, mineur.y, 0.35);
+function noteCorniche(dt) {
+  tempsCorniche -= dt;
+  if (tempsCorniche > 0 || mineur.etat !== "sol" || !auSol() || eauDansBoite(mineur.x, mineur.y, 0.02)) return;
+  tempsCorniche = 0.3;
+  const der = corniches[corniches.length - 1];
+  if (der && Math.abs(der.x - mineur.x) + Math.abs(der.y - mineur.y) < 3) return;
+  corniches.push({ x: mineur.x, y: mineur.y });
+  if (corniches.length > 30) corniches.shift();
+}
+function retourCorniche() {
+  if (!corniches.length || corniches[0].x !== DEPART_X || corniches[0].y !== DEPART_Y) corniches.unshift({ x: DEPART_X, y: DEPART_Y }); // en dernier recours : le départ
+  for (let k = corniches.length - 1; k >= 0; k--) {
+    const c = corniches[k];
+    if (occupe(c.x, c.y) || !occupe(c.x, c.y + 0.05) || eauDansBoite(c.x, c.y, 0.02)) { if (k > 0) corniches.splice(k, 1); continue; }
+    const m = mineur;
+    for (let n = 0; n < 8; n++) poussiere(Math.floor(m.x + 1), Math.floor(m.y - 1), [120, 170, 230]);
+    m.x = c.x; m.y = c.y; m.vx = 0; m.vy = 0; m.etat = "sol"; m.cible = null; m.ecrase = 0.8;
+    lumiereSale = true; attenteRetour = 0; decalX = 0; decalY = 0;
+    vibrer(30); sonRetour();
+    return;
+  }
+}
+
+// ---------- 3 quater. Sable qui s'écroule, eau qui coule ----------
+// On ne s'occupe que des grains et des gouttes « réveillés » (qui viennent de perdre un appui),
+// pour que ça reste rapide même dans une grande mine.
+
+const eauNiv = new Float32Array(N);  // quantité d'eau dans chaque case (0 à 1)
+const sableActif = new Set(), eauActive = new Set();
+let horlogeSable = 0, horlogeEau = 0, calmeDepuis = 10;
+
+// Une case vient de changer : on réveille le sable et l'eau autour
+function reveiller(x, y) {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const nx = x + dx, ny = y + dy;
+    if (!dansMonde(nx, ny)) continue;
+    const j = idx(nx, ny);
+    if (type[j] === SABLE) sableActif.add(j);
+    else if (type[j] === EAU) eauActive.add(j);
+  }
+}
+
+function majSable() {
+  if (!sableActif.size) return false;
+  const liste = [...sableActif].sort((a, b) => b - a); // du bas vers le haut
+  sableActif.clear();
+  let bouge = false;
+  for (const i of liste) {
+    if (type[i] !== SABLE) continue;
+    const x = i % LARG, y = (i / LARG) | 0;
+    const cote = Math.random() < 0.5 ? -1 : 1;
+    for (const dx of [0, cote, -cote]) {
+      const nx = x + dx, ny = y + 1;
+      if (!dansMonde(nx, ny)) continue;
+      const j = idx(nx, ny), tj = type[j];
+      if (tj !== VIDE && tj !== EAU) continue;
+      if (dx && type[idx(nx, y)] !== VIDE && type[idx(nx, y)] !== EAU) continue; // en biais : il faut que le côté soit libre
+      type[j] = SABLE; usure[j] = 0; usure[i] = 0;
+      if (tj === EAU) { type[i] = EAU; eauNiv[i] = eauNiv[j]; eauNiv[j] = 0; eauActive.add(i); } // le sable coule, l'eau remonte
+      else type[i] = VIDE;
+      sableActif.add(j);
+      reveiller(x, y);
+      bouge = true;
+      break;
+    }
+  }
+  return bouge;
+}
+
+function majEau() {
+  if (!eauActive.size) return false;
+  const liste = [...eauActive].sort((a, b) => b - a); // du bas vers le haut
+  eauActive.clear();
+  let bouge = false;
+  const libre = j => type[j] === VIDE || type[j] === EAU;
+  const verser = (j, q) => { eauNiv[j] += q; if (type[j] !== EAU) { type[j] = EAU; } eauActive.add(j); };
+  for (const i of liste) {
+    if (type[i] !== EAU) continue;
+    const x = i % LARG, y = (i / LARG) | 0;
+    let m = eauNiv[i], coule = false;
+    // 1. Vers le bas, autant que possible
+    if (y + 1 < PROF) {
+      const b = i + LARG;
+      if (libre(b)) { const q = Math.min(m, 1 - eauNiv[b]); if (q > 0.002) { verser(b, q); m -= q; coule = true; } }
+    }
+    // 2. Sur les côtés, pour se mettre à niveau
+    if (m > 0.01) {
+      const ordre = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+      for (const dx of ordre) {
+        const nx = x + dx;
+        if (nx < 0 || nx >= LARG) continue;
+        const s = i + dx;
+        if (!libre(s)) continue;
+        const ecart = m - eauNiv[s];
+        if (ecart > 0.01) { const q = ecart / 3; verser(s, q); m -= q; coule = true; }
+      }
+    }
+    if (m < 0.006) { m = 0; type[i] = VIDE; coule = true; } // une trace d'eau s'évapore
+    eauNiv[i] = m;
+    if (coule) {
+      bouge = true;
+      eauActive.add(i);
+      if (y > 0 && type[i - LARG] === EAU) eauActive.add(i - LARG);
+      if (x > 0 && type[i - 1] === EAU) eauActive.add(i - 1);
+      if (x < LARG - 1 && type[i + 1] === EAU) eauActive.add(i + 1);
+    }
+  }
+  return bouge;
+}
+
+// Le sable et l'eau avancent à leur rythme (même si on ne touche plus l'écran : ça finit de couler)
+function majMatieres(dt) {
+  let bouge = false;
+  horlogeSable += dt;
+  while (horlogeSable >= 1 / 30) { horlogeSable -= 1 / 30; if (majSable()) bouge = true; }
+  horlogeEau += dt;
+  let tours = 0; // (au plus 6 tours par image, pour ne jamais ralentir le jeu)
+  while (horlogeEau >= 1 / 150 && tours++ < 6) { horlogeEau -= 1 / 150; if (majEau()) bouge = true; }
+  if (horlogeEau > 0.1) horlogeEau = 0;
+  if (bouge) {
+    lumiereSale = true;
+    if (calmeDepuis > 1.5) { vibrer(25); sonDanger(); } // ça se met à couler : on prévient
+    calmeDepuis = 0;
+  } else calmeDepuis += dt;
+}
+
+// Gouttes qui tombent du plafond près des poches d'eau (un indice du danger)
+function majGouttes() {
+  for (let n = 0; n < 12; n++) {
+    const x = Math.floor(camX + Math.random() * largVue), y = Math.floor(camY + Math.random() * hautVue);
+    if (typeA(x, y) !== VIDE || !solide(x, y - 1) || revele[idx(x, y)] < 200) continue;
+    let eau = false;
+    for (let k = 2; k <= 6; k++) if (typeA(x, y - k) === EAU) { eau = true; break; }
+    if (eau && Math.random() < 0.08 && particules.length < 200)
+      particules.push({ x: x + 0.3 + Math.random() * 0.4, y: y + 0.05, vx: 0, vy: 0, vie: 3, coul: "rgb(150,200,240)", goutte: true });
+  }
 }
 
 // ---------- 3 bis. Le lance-pierre ----------
@@ -488,6 +690,7 @@ function detruire(x, y) {
   type[i] = VIDE;
   usure[i] = 0;
   lumiereSale = true;
+  reveiller(x, y); // le sable au-dessus peut tomber, l'eau à côté peut couler
 }
 
 let matiereGrattee = 0; // ce qu'on gratte en ce moment (pour le son)
@@ -540,7 +743,12 @@ function majParticules(dt) {
   for (let n = particules.length - 1; n >= 0; n--) {
     const p = particules[n];
     p.vy += 50 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vie -= dt;
-    if (p.vie <= 0 || solide(Math.floor(p.x), Math.floor(p.y))) particules.splice(n, 1);
+    const touche = solide(Math.floor(p.x), Math.floor(p.y)) || (p.goutte && typeA(Math.floor(p.x), Math.floor(p.y)) === EAU);
+    if (p.vie <= 0 || touche) {
+      particules.splice(n, 1);
+      if (p.goutte && touche && !p.eclabousse) for (const s of [-1, 1]) // petite éclaboussure
+        particules.push({ x: p.x, y: p.y - 0.3, vx: s * (2 + Math.random() * 2), vy: -4, vie: 0.25, coul: p.coul, goutte: true, eclabousse: true });
+    }
   }
 }
 
@@ -679,6 +887,15 @@ function sonRamasse(t) {
 }
 function sonChoc() { bip(110, 0.12, 0.08); bip(70, 0.15, 0.06); }
 function sonSaut() { bip(420, 0.08, 0.03, "triangle"); }
+function sonRetour() { bip(880, 0.1, 0.05); setTimeout(() => bip(660, 0.1, 0.05), 90); setTimeout(() => bip(440, 0.15, 0.05), 180); }
+// Grondement sourd : du sable ou de l'eau se met à couler
+function sonDanger() {
+  if (!son.actif || !son.ctx) return;
+  const a = son.ctx, t = a.currentTime, src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = son.bruit; f.type = "lowpass"; f.frequency.value = 180;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  src.connect(f).connect(g).connect(a.destination); src.start(t); src.stop(t + 0.65);
+}
 // « Fwip » du lâcher : bruit qui glisse de l'aigu au grave
 function sonFwip() {
   if (!son.actif || !son.ctx) return;
@@ -724,7 +941,7 @@ ecran.addEventListener("pointerdown", e => {
   doigts.set(e.pointerId, { x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY });
   if (doigts.size >= 2) { modeRegard = true; geste = null; return; } // dès le 2e doigt, on regarde au lieu de gratter
   const wx = versMondeX(e.clientX), wy = versMondeY(e.clientY);
-  if (mineur.etat !== "air" && dansPrise(wx, wy)) geste = { type: "lancer", id: e.pointerId };
+  if (peutLancer() && dansPrise(wx, wy)) geste = { type: "lancer", id: e.pointerId };
   else geste = {
     type: "gratter", id: e.pointerId, t0: performance.now(), x0: e.clientX, y0: e.clientY, bouge: false,
     // Si on touche un endroit déjà creusé, ce sera peut-être un « va là » : on attend un peu avant de gratter
@@ -760,7 +977,7 @@ ecran.addEventListener("contextmenu", e => e.preventDefault());
 function allerA(wx, wy) {
   const t = typeA(Math.floor(wx), Math.floor(wy));
   if (t !== VIDE && t !== EAU) return;
-  if (mineur.etat === "accroche") { mineur.etat = "air"; mineur.vx = 0; mineur.vy = 0; } // il lâche la paroi
+  if (mineur.etat === "accroche" || mineur.etat === "glisse") { mineur.etat = "air"; mineur.vx = 0; mineur.vy = 0; } // il lâche la paroi
   mineur.cible = wx;
 }
 
@@ -818,7 +1035,7 @@ addEventListener("keydown", e => {
   else if (TOUCHES_SAUT.includes(e.code)) { if (!e.repeat) sauter(); }
   else return;
   e.preventDefault();
-  if (mineur.etat === "accroche" && (touchesTenues.size)) mineur.etat = "air";
+  if (mineur.etat === "accroche" && touchesTenues.size) mineur.etat = "air";
   majDirTouche();
 });
 addEventListener("keyup", e => {
@@ -838,7 +1055,7 @@ let dpr = 1;    // densité de l'écran (le calque est dessiné à la vraie rés
 function redimensionner() {
   largVue = innerWidth / taille; hautVue = innerHeight / taille;
   // Le grain 4 × 4 des blocs n'est dessiné que quand il se voit (pour rester rapide)
-  const sub = taille >= 5 ? 4 : taille >= 2.5 ? 2 : 1;
+  const sub = taille >= 5 ? 4 : taille >= 2.5 ? 2 : 1; // (au-delà, 4 suffit : le grain reste fin)
   // Une case de plus de chaque côté pour pouvoir glisser en douceur entre deux cases
   const l = Math.ceil(largVue) + 1, h = Math.ceil(hautVue) + 1;
   if (l !== vueL || h !== vueH || sub !== SUB || !image) {
@@ -936,14 +1153,17 @@ function dessinerMonde(temps, dt) {
       }
       const vide = t === VIDE || t === EAU;
       let hautVide = false, gVide = false, dVide = false, basVide = false;
+      let niveauEau = 0, eauR = 0, eauG = 0, eauB = 0, vague = false;
       if (vide) {
         // Paroi de fond : la roche de la couche, assombrie
         const P = COUL_COUCHE[couche[i]];
         r = P[0] * 0.34; g = P[1] * 0.34; b = P[2] * 0.34;
         if (t === EAU) {
-          const surface = typeA(x, y - 1) !== EAU;
-          if (surface && Math.sin(x * 0.5 + temps * 3) > -0.2) { r = 150; g = 200; b = 240; }
-          else { r = r * 0.45 + 40; g = g * 0.45 + 95; b = b * 0.45 + 165; }
+          // Eau transparente : on voit la paroi au travers ; la case n'est remplie que jusqu'à son niveau
+          const pleinDessus = typeA(x, y - 1) === EAU;
+          niveauEau = pleinDessus ? 1 : Math.min(1, eauNiv[i]);
+          eauR = (r * 0.45 + 40) * l * TEINTE[0]; eauG = (g * 0.45 + 95) * l * TEINTE[1]; eauB = (b * 0.45 + 165) * l * TEINTE[2];
+          vague = !pleinDessus && Math.sin(x * 0.5 + temps * 3) > -0.2;
         }
       } else {
         const c = couleurCase(x, y, t);
@@ -963,7 +1183,17 @@ function dessinerMonde(temps, dt) {
         for (let k = 0; k < SUB; k++, q += 4) {
           const sx = x * 4 + k * pasSub;
           let m;
-          if (vide) m = t === EAU ? 1 : 0.85 + 0.3 * hache(sx >> 2, sy >> 2);
+          if (t === EAU) {
+            const haut = (j + 0.5) / SUB, surf = 1 - niveauEau;
+            if (haut >= surf) { // sous la surface
+              const ligneSurface = haut - surf < 1 / SUB;
+              if (ligneSurface && vague) { d[q] = 150 * l; d[q + 1] = 200 * l; d[q + 2] = 240 * l; }
+              else { d[q] = Math.min(255, eauR); d[q + 1] = Math.min(255, eauG); d[q + 2] = Math.min(255, eauB); }
+              d[q + 3] = 255;
+              continue;
+            }
+            m = 0.85 + 0.3 * hache(sx >> 2, sy >> 2);
+          } else if (vide) m = 0.85 + 0.3 * hache(sx >> 2, sy >> 2);
           else {
             m = SUB === 1 ? 1 : 0.9 + 0.14 * hache(sx, sy);
             if (t === SABLE) m *= hache(sx * 3 + 1, sy * 5 + 2) < 0.5 ? 1.25 : 0.78; // grain moucheté
@@ -1035,11 +1265,25 @@ function dessinerCalque(temps) {
   }
   cc.restore();
 
-  // Poussière
+  // Coincé : on redessine le sable par-dessus lui (il est dedans)
+  if (m.coince) {
+    for (let y = Math.floor(m.y - HM); y < Math.ceil(m.y); y++) for (let x = Math.floor(m.x); x < Math.ceil(m.x + LM); x++) {
+      if (typeA(x, y) !== SABLE) continue;
+      const c = couleurCase(x, y, SABLE), L = lumiereEn(x, y);
+      for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) {
+        const mo = hache(x * 12 + k * 3 + 1, y * 20 + j * 5 + 2) < 0.5 ? 1.25 : 0.78;
+        cc.fillStyle = "rgb(" + Math.min(255, c[0] * mo * L * TEINTE[0] | 0) + "," + Math.min(255, c[1] * mo * L * TEINTE[1] | 0) + "," + Math.min(255, c[2] * mo * L * TEINTE[2] | 0) + ")";
+        carre(versEcranX(x) + k * p, versEcranY(y) + j * p);
+      }
+    }
+  }
+
+  // Poussière et gouttes
   for (const q of particules) {
-    cc.globalAlpha = Math.min(1, q.vie * 2.5);
+    cc.globalAlpha = q.goutte ? 0.9 : Math.min(1, q.vie * 2.5);
     cc.fillStyle = q.coul;
     carre(versEcranX(q.x), versEcranY(q.y));
+    if (q.goutte && !q.eclabousse) carre(versEcranX(q.x), versEcranY(q.y) - p); // goutte allongée
   }
   cc.globalAlpha = 1;
 
@@ -1190,7 +1434,9 @@ function boucle(ms) {
   tAvant = temps;
 
   majEntrees(dt);
+  majMatieres(dt);
   majMineur(dt);
+  majGouttes();
   majObjets(dt);
   majParticules(dt);
   if (lumiereSale) { calculerLumiere(); lumiereSale = false; }
