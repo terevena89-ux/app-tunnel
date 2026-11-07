@@ -11,15 +11,19 @@
 //   4. dessine les cases visibles, puis le mineur et la poussière.
 // =========================================================
 
-const VERSION = "0.6.0";
+const VERSION = "0.7.0";
 
 // ---------- 1. Réglages ----------
 
-// Zoom : taille d'une case à l'écran, en px (1,5 = vue de loin ; 24 = tout près)
-const TAILLE_MIN = 1.5, TAILLE_MAX = 24;
-let taille = 4.5, tailleCible = 4.5;
-try { taille = tailleCible = Math.min(TAILLE_MAX, Math.max(TAILLE_MIN, +localStorage.getItem("tunnel-zoom") || 4.5)); } catch (e) {}
-const LARG = 256, PROF = 1600;     // taille du monde, en cases
+// ÉCHELLE : chaque bloc est 2 fois plus fin qu'au début (le mineur fait 4 × 6 blocs).
+// Toutes les longueurs « d'origine » sont multipliées par E pour que la mine garde la même taille réelle.
+const E = 2;
+
+// Zoom : taille d'une case à l'écran, en px
+const TAILLE_MIN = 1.5, TAILLE_MAX = 12;
+let taille = 2.25, tailleCible = 2.25;
+try { taille = tailleCible = Math.min(TAILLE_MAX, Math.max(TAILLE_MIN, +localStorage.getItem("tunnel-zoom2") || 2.25)); } catch (e) {}
+const LARG = 256 * E, PROF = 1600 * E;   // taille du monde, en cases
 const N = LARG * PROF;
 
 // Types de cases
@@ -30,21 +34,42 @@ const VIDE = 0, TERRE = 1, ARGILE = 2, BASALTE = 3, SABLE = 4,
       // Roches dures, mélangées dans chaque couche (de plus en plus nombreuses en descendant)
       CAILLOU = 13, SCHISTE = 14, OBSIDIENNE = 15;
 
-// Points de vie de chaque matière (plus c'est haut, plus il faut insister)
+// Dureté de chaque matière : nombre de « coups » (× le réglage « coups pour la terre »)
 const RES = [];
 RES[TERRE] = 1; RES[ARGILE] = 2; RES[BASALTE] = 4; RES[SABLE] = 0.5;
 RES[CUIVRE] = 3; RES[OR] = 4; RES[CRISTAL] = 3; RES[FOSSILE] = 3; RES[RECHARGE] = 1.5;
 RES[CAILLOU] = 4; RES[SCHISTE] = 7; RES[OBSIDIENNE] = 12;
 
-// RYTHME : tout le jeu tourne un peu au ralenti (0,65 = 65 % de la vitesse d'origine), pour un rythme posé
-const RYTHME = 0.65;
-const PUISSANCE = 18 * RYTHME; // usure par seconde sous le doigt (au zoom normal)
-// Le grattoir garde toujours la même taille SOUS LE DOIGT (environ un ongle) :
-// de loin il couvre beaucoup de cases (large mais lent), de près peu de cases (fin mais rapide).
-const RAYON_ECRAN = 7;       // rayon du grattoir à l'écran (px), réglable avec le curseur
-const RAYON_REF = 7 / 3;     // rayon en cases au zoom de référence (3 px par case)
-const PORTEE = 22;           // distance max entre le mineur et le doigt (en cases)
-const PORTEE_LUMIERE = 90;   // jusqu'où porte la lampe
+// ---------- Réglages de DÉMO (curseurs du panneau « réglages ») ----------
+// Chaque réglage : valeur par défaut, minimum, maximum, pas, nom affiché, unité.
+// Ils sont gardés dans ce téléphone (pas synchronisés).
+const DEF_REG = {
+  rythme:      { v: 1,    min: 0.3, max: 2,    pas: 0.05, nom: "Rythme général", u: "×" },
+  marche:      { v: 29,   min: 5,   max: 80,   pas: 1,    nom: "Vitesse de marche", u: "cases/s" },
+  saut:        { v: 12,   min: 2,   max: 40,   pas: 0.5,  nom: "Hauteur de saut", u: "cases" },
+  gravite:     { v: 76,   min: 20,  max: 250,  pas: 1,    nom: "Gravité", u: "" },
+  rampage:     { v: 45,   min: 10,  max: 100,  pas: 5,    nom: "Vitesse de rampage", u: "%" },
+  squishy:     { v: 1,    min: 0,   max: 3,    pas: 0.1,  nom: "Effet squishy", u: "×" },
+  bouncy:      { v: 1,    min: 0,   max: 3,    pas: 0.1,  nom: "Effet bouncy", u: "×" },
+  coupsSec:    { v: 4,    min: 1,   max: 12,   pas: 0.5,  nom: "Coups par seconde", u: "" },
+  coupsTerre:  { v: 2,    min: 1,   max: 8,    pas: 1,    nom: "Coups pour la terre", u: "" },
+  pinceau:     { v: 1,    min: 0.4, max: 3,    pas: 0.1,  nom: "Taille du pinceau", u: "×" },
+  grossit:     { v: 2,    min: 1,   max: 4,    pas: 0.1,  nom: "Grossissement immobile", u: "×" },
+  portee:      { v: 44,   min: 10,  max: 120,  pas: 1,    nom: "Portée du minage", u: "cases" },
+  douceCrist:  { v: 220,  min: 40,  max: 800,  pas: 10,   nom: "Vitesse douce (cristaux)", u: "px/s" },
+  lancer:      { v: 72,   min: 20,  max: 200,  pas: 1,    nom: "Puissance du lancer", u: "" },
+  aimant:      { v: 12,   min: 0,   max: 50,   pas: 1,    nom: "Rayon de l'aimant", u: "cases" },
+  lampe:       { v: 180,  min: 60,  max: 200,  pas: 5,    nom: "Portée de la lampe", u: "cases" },
+  matieres:    { v: 1,    min: 0.2, max: 3,    pas: 0.05, nom: "Vitesse sable / eau", u: "×" }
+};
+const REG = {};
+function regDefaut() { for (const k in DEF_REG) REG[k] = DEF_REG[k].v; }
+regDefaut();
+try { const s = JSON.parse(localStorage.getItem("tunnel-demo") || "{}"); for (const k in s) if (k in DEF_REG) REG[k] = s[k]; } catch (e) {}
+
+// Le grattoir garde toujours la même taille SOUS LE DOIGT (environ un ongle) : de loin il couvre beaucoup de cases.
+const RAYON_ECRAN = 7;       // rayon du grattoir à l'écran (px), × le réglage « taille du pinceau »
+const PORTEE_LUMIERE = 90;   // (remplacé par le réglage « portée de la lampe »)
 const MEMOIRE = 0.26;        // luminosité des endroits déjà vus
 
 // Couleurs des couches : terre, argile rouge, basalte
@@ -137,80 +162,80 @@ function grotte(cx, cy, rx, ry) {
     }
   };
   for (let x = Math.floor(cx - rx); x <= cx + rx;) {
-    const larg = 2 + Math.floor(alea() * 3), xc = x + (larg >> 1);
+    const larg = (2 + Math.floor(alea() * 3)) * E, xc = x + (larg >> 1);
     let haut = -1, bas = -1;
     for (let y = Math.floor(cy - ry * 1.5); y <= cy; y++) if (typeA(xc, y) === VIDE) { haut = y; break; }
     for (let y = Math.ceil(cy + ry * 1.5); y >= cy; y--) if (typeA(xc, y) === VIDE) { bas = y; break; }
-    if (haut >= 0 && alea() < 0.65) pointe(xc, haut, 1, entre(2, 8), larg);
-    if (bas >= 0 && alea() < 0.4) pointe(xc, bas, -1, entre(1, 4), larg + 1);
-    x += larg + Math.floor(alea() * 3);
+    if (haut >= 0 && alea() < 0.65) pointe(xc, haut, 1, entre(2, 8) * E, larg);
+    if (bas >= 0 && alea() < 0.4) pointe(xc, bas, -1, entre(1, 4) * E, larg + E);
+    x += larg + Math.floor(alea() * 3) * E;
   }
   // Un trésor caché juste sous le sol de la grotte
   const xt = Math.round(cx + (alea() - 0.5) * rx);
   for (let y = Math.ceil(cy + ry * 1.5); y >= cy; y--) {
     if (typeA(xt, y) === VIDE) {
       const choix = [CRISTAL, OR, FOSSILE, CRISTAL][Math.floor(alea() * 4)];
-      const place = choix === CRISTAL ? placerCristal(xt, y + 5) : choix === FOSSILE ? placerCristal(xt, y + 5, alea, "fossile") : false;
-      if (!place) tache(xt, y + 2, 2.2, OR);
+      const place = choix === CRISTAL ? placerCristal(xt, y + 5 * E) : choix === FOSSILE ? placerCristal(xt, y + 5 * E, alea, "fossile") : false;
+      if (!place) tache(xt, y + 2 * E, 2.2 * E, OR);
       break;
     }
   }
 }
 
 // Point de départ du mineur
-const DEPART_X = 126, DEPART_Y = 70;
+const DEPART_X = 126 * E, DEPART_Y = 70 * E;
 // Réglages de DÉMO (pour tester vite) : couches très proches du départ, cristaux juste à côté
-const DEMO_COUCHE_1 = 150, DEMO_COUCHE_2 = 280;
+const DEMO_COUCHE_1 = 150 * E, DEMO_COUCHE_2 = 280 * E;
 
 function genererMonde() {
   // Les couches, avec des frontières qui ondulent
   for (let x = 0; x < LARG; x++) {
     // DÉMO : couches rapprochées pour voir vite les nouvelles matières (vrai jeu : 450 / 950)
-    const b1 = DEMO_COUCHE_1 + (bruit1(x / 23, 1) - 0.5) * 24 + (bruit1(x / 7, 2) - 0.5) * 8;
-    const b2 = DEMO_COUCHE_2 + (bruit1(x / 29, 3) - 0.5) * 30 + (bruit1(x / 6, 4) - 0.5) * 8;
-    const fond = 1500 + (bruit1(x / 17, 5) - 0.5) * 30;
+    const b1 = DEMO_COUCHE_1 + ((bruit1(x / (23 * E), 1) - 0.5) * 24 + (bruit1(x / (7 * E), 2) - 0.5) * 8) * E;
+    const b2 = DEMO_COUCHE_2 + ((bruit1(x / (29 * E), 3) - 0.5) * 30 + (bruit1(x / (6 * E), 4) - 0.5) * 8) * E;
+    const fond = (1500 + (bruit1(x / (17 * E), 5) - 0.5) * 30) * E;
     for (let y = 0; y < PROF; y++) {
       const i = idx(x, y), c = y < b1 ? 1 : y < b2 ? 2 : 3;
       couche[i] = c;
-      type[i] = (y >= fond || x < 2 || x >= LARG - 2) ? SOCLE : c;
+      type[i] = (y >= fond || x < 2 * E || x >= LARG - 2 * E) ? SOCLE : c;
     }
   }
   // Roches dures : presque rien juste sous le départ, puis de plus en plus en descendant
   const DUR = [null, CAILLOU, SCHISTE, OBSIDIENNE];
   for (let n = 0; n < 420; n++) {
-    const x = entre(4, LARG - 4), y = entre(DEPART_Y + 15, 1490);
-    if (alea() > Math.min(1, (y - DEPART_Y) / 70)) continue;
-    tache(x, y, entre(1.5, 4.5), DUR[couche[idx(Math.floor(x), Math.floor(y))]]);
+    const x = entre(4 * E, LARG - 4 * E), y = entre(DEPART_Y + 15 * E, 1490 * E);
+    if (alea() > Math.min(1, (y - DEPART_Y) / (70 * E))) continue;
+    tache(x, y, entre(1.5, 4.5) * E, DUR[couche[idx(Math.floor(x), Math.floor(y))]]);
   }
   // Poches de sable (même couleur que la couche, grain moucheté)
-  for (let n = 0; n < 34; n++) tache(entre(10, LARG - 10), entre(40, 1480), entre(4, 9), SABLE);
+  for (let n = 0; n < 34; n++) tache(entre(10, 246) * E, entre(40, 1480) * E, entre(4, 9) * E, SABLE);
   // Minerais, cristaux, fossiles, recharges
-  for (let n = 0; n < 130; n++) tache(entre(4, LARG - 4), entre(30, 1490), entre(1.5, 3), CUIVRE, 0.85);
-  for (let n = 0; n < 55; n++) tache(entre(4, LARG - 4), entre(300, 1490), entre(1.5, 2.5), OR, 0.85);
-  for (let n = 0; n < 40; n++) placerCristal(entre(10, LARG - 10), entre(150, 1490)); // gros cristaux (s'ils tiennent dans la roche)
-  for (let n = 0; n < 24; n++) placerCristal(entre(10, LARG - 10), entre(120, 1490), alea, "fossile"); // gros fossiles
-  for (let n = 0; n < 16; n++) tache(entre(4, LARG - 4), entre(80, 1490), 1.5, RECHARGE);
+  for (let n = 0; n < 130; n++) tache(entre(4, 252) * E, entre(30, 1490) * E, entre(1.5, 3) * E, CUIVRE, 0.85);
+  for (let n = 0; n < 55; n++) tache(entre(4, 252) * E, entre(300, 1490) * E, entre(1.5, 2.5) * E, OR, 0.85);
+  for (let n = 0; n < 40; n++) placerCristal(entre(10, 246) * E, entre(150, 1490) * E); // gros cristaux (s'ils tiennent dans la roche)
+  for (let n = 0; n < 24; n++) placerCristal(entre(10, 246) * E, entre(120, 1490) * E, alea, "fossile"); // gros fossiles
+  for (let n = 0; n < 16; n++) tache(entre(4, 252) * E, entre(80, 1490) * E, 1.5 * E, RECHARGE);
   // Grottes naturelles, rares et grandes
-  for (let n = 0; n < 9; n++) grotte(entre(30, LARG - 30), entre(110, 1440), entre(18, 34), entre(9, 16));
+  for (let n = 0; n < 9; n++) grotte(entre(30, 226) * E, entre(110, 1440) * E, entre(18, 34) * E, entre(9, 16) * E);
   // Poches d'eau (elles se vident dans les galeries quand on les perce)
   for (let n = 0; n < 14; n++) {
-    const cx = entre(15, LARG - 15), cy = entre(100, 1480), rx = entre(5, 12), ry = entre(3, 6);
+    const cx = entre(15, 241) * E, cy = entre(100, 1480) * E, rx = entre(5, 12) * E, ry = entre(3, 6) * E;
     for (let y = Math.floor(cy - ry); y <= cy + ry; y++) for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
       const dx = (x - cx) / rx, dy = (y - cy) / ry;
       if (dansMonde(x, y) && dx * dx + dy * dy < 1 && (rocheSimple(type[idx(x, y)]) || type[idx(x, y)] === SABLE)) type[idx(x, y)] = EAU;
     }
   }
   // Zone de départ propre : pas de sable ni d'eau tout près, une petite salle pour commencer
-  for (let y = 0; y < DEPART_Y + 22; y++) for (let x = 100; x < 156; x++) {
+  for (let y = 0; y < DEPART_Y + 22 * E; y++) for (let x = 100 * E; x < 156 * E; x++) {
     const i = idx(x, y);
     if (type[i] === SABLE || type[i] === EAU || type[i] === VIDE) type[i] = TERRE;
   }
-  for (let y = DEPART_Y - 14; y < DEPART_Y; y++) for (let x = DEPART_X - 8; x < DEPART_X + 13; x++) {
-    const bord = (x - DEPART_X - 2.5) ** 2 / 110 + (y - DEPART_Y + 7) ** 2 / 55;
+  for (let y = DEPART_Y - 14 * E; y < DEPART_Y; y++) for (let x = DEPART_X - 8 * E; x < DEPART_X + 13 * E; x++) {
+    const bord = ((x - DEPART_X) / E - 2.5) ** 2 / 110 + ((y - DEPART_Y) / E + 7) ** 2 / 55;
     if (bord < 1) type[idx(x, y)] = VIDE;
   }
   // DÉMO : quelques cristaux enfouis tout près du départ (à dégager puis détacher doucement)
-  [[-18, 8], [20, 10], [-4, 22], [12, 30], [-24, 26], [26, 24]].forEach(([dx, dy], k) => placerCristal(DEPART_X + dx, DEPART_Y + dy, alea, k % 2 ? "fossile" : "cristal")); // DÉMO : cristaux et fossiles tout près
+  [[-18, 8], [20, 10], [-4, 22], [12, 30], [-24, 26], [26, 24]].forEach(([dx, dy], k) => placerCristal(DEPART_X + dx * E, DEPART_Y + dy * E, alea, k % 2 ? "fossile" : "cristal")); // DÉMO : cristaux et fossiles tout près
   // Les poches d'eau sont pleines
   for (let i = 0; i < N; i++) if (type[i] === EAU) eauNiv[i] = 1;
 }
@@ -221,11 +246,15 @@ function genererMonde() {
 // (chaque case = 4 × 4 petits pixels), sur un calque à part pour rester net.
 // États : "sol" (posé), "air" (en vol ou en chute), "accroche" (grappin planté au plafond, il pend).
 
-const LM = 2, HM = 3;
+const LM = 2 * E, HM = 3 * E;
 // Sa « boîte de collision » est un peu plus petite que son dessin (coins arrondis),
 // pour qu'il passe là où, à l'œil, ça doit passer.
-const MARGE_COTE = 0.25, MARGE_HAUT = 0.35;
-const GRAVITE = 90 * RYTHME * RYTHME, CHUTE_MAX = 45 * RYTHME, VITESSE_MARCHE = 22 * RYTHME, SAUT = 33 * RYTHME, VITESSE_GLISSE = 5;
+const MARGE_COTE = 0.25 * E, MARGE_HAUT = 0.35 * E;
+// Vitesses « d'origine » (multipliées par V0 = rythme posé × échelle) ; la marche, le saut et la gravité
+// viennent des réglages de démo (REG), pour pouvoir les essayer.
+const V0 = 0.65 * E;
+const CHUTE_MAX = 45 * V0, VITESSE_GLISSE = 5 * E;
+const vSaut = () => Math.sqrt(2 * REG.gravite * REG.saut); // vitesse de départ pour atteindre la hauteur voulue
 const mineur = {
   x: DEPART_X, y: DEPART_Y, vx: 0, vy: 0, sens: 1, etat: "sol", cible: null,
   controleAir: false,          // en saut « au clavier », on peut diriger en l'air
@@ -233,7 +262,7 @@ const mineur = {
   pas: 0,                      // compteur pour l'animation de marche
   murSens: 0,                  // côté du mur contre lequel il glisse (-1 / 1)
   coince: false,               // du sable lui est tombé dessus
-  serre: false,                // il se faufile dans un passage de 2 cases (tassé, ralenti)
+  serre: false,                // il se faufile dans un passage bas (2/3 de sa taille) (tassé, ralenti)
   tasse: 0                     // tassement visible (0 à 1), suit « serre » en douceur
 };
 let dirTouche = 0;             // -1 gauche, 1 droite (touches du clavier ou boutons à l'écran)
@@ -243,8 +272,8 @@ let outil = "grappin";
 try { outil = localStorage.getItem("tunnel-outil") || "grappin"; } catch (e) {}
 
 // La boîte du mineur, placée en (x, y), toucherait-elle de la roche ?
-// (haut = hauteur de la boîte : 3 cases debout, 2 quand il se faufile en se tassant)
-const HM_SERRE = 2;
+// (haut = hauteur de la boîte : 6 cases debout, 4 quand il se faufile en se tassant)
+const HM_SERRE = 2 * E;
 function occupe(x, y, haut = mineur.serre ? HM_SERRE : HM) {
   const x0 = Math.floor(x + MARGE_COTE + 1e-6), x1 = Math.ceil(x + LM - MARGE_COTE - 1e-6) - 1;
   const y0 = Math.floor(y - haut + MARGE_HAUT + 1e-6), y1 = Math.ceil(y - 1e-6) - 1;
@@ -257,8 +286,9 @@ const peutLancer = () => mineur.etat !== "air" && !mineur.coince && !mineur.serr
 // Outil « perce » : casse la terre et le sable autour du point d'impact (pas la roche dure)
 function percer(cx, cy) {
   let casse = false;
-  for (let y = Math.floor(cy - 2.5); y <= cy + 2.5; y++) for (let x = Math.floor(cx - 2.5); x <= cx + 2.5; x++) {
-    if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 > 6.25 || !dansMonde(x, y)) continue;
+  const R = 2.5 * E;
+  for (let y = Math.floor(cy - R); y <= cy + R; y++) for (let x = Math.floor(cx - R); x <= cx + R; x++) {
+    if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 > R * R || !dansMonde(x, y)) continue;
     const i = idx(x, y);
     if (type[i] === TERRE || type[i] === SABLE) { depenser(RES[type[i]] / 2); detruire(x, y); casse = true; }
   }
@@ -268,8 +298,8 @@ function percer(cx, cy) {
 
 function atterrir() {
   const m = mineur;
-  m.ecrase = Math.min(1, Math.max(m.ecrase, (m.vy - 8 * RYTHME) / (35 * RYTHME))); // plus il tombe vite, plus il s'aplatit
-  if (m.vy > 20 * RYTHME) sonChoc();
+  m.ecrase = Math.min(1, Math.max(m.ecrase, (m.vy - 8 * V0) / (35 * V0))); // plus il tombe vite, plus il s'aplatit
+  if (m.vy > 20 * V0) sonChoc();
   m.etat = "sol"; m.vx = 0; m.vy = 0; m.controleAir = false;
   if (!occupe(m.x, Math.ceil(m.y - 1e-6))) m.y = Math.ceil(m.y - 1e-6); // bien posé sur la case
 }
@@ -279,7 +309,7 @@ function atterrir() {
 // Rebond doux : il s'écrase un peu et repart dans l'autre sens (jamais collé, jamais figé)
 function rebondir(axe, force) {
   const m = mineur;
-  if (axe === "x") { m.vx = -m.vx * force; if (Math.abs(m.vx) < 3 * RYTHME) m.vx = -Math.sign(m.vx || m.sens) * 3 * RYTHME; }
+  if (axe === "x") { m.vx = -m.vx * force; if (Math.abs(m.vx) < 3 * V0) m.vx = -Math.sign(m.vx || m.sens) * 3 * V0; }
   else m.vy = Math.abs(m.vy) * force; // plafond : il redescend
   if (performance.now() - dernierRebond > 180) { // (pas de bruit en rafale s'il reste contre le mur)
     dernierRebond = performance.now();
@@ -291,11 +321,11 @@ let dernierRebond = 0;
 
 function choc(axe) {
   const m = mineur;
-  if (axe === "bas" && (m.controleAir || !(outil === "rebond" && m.vy > 14 * RYTHME))) { atterrir(); return false; }
-  if (m.controleAir) { rebondir(axe, 0.4); return false; } // simple saut : il rebondit, sans outil
+  if (axe === "bas" && (m.controleAir || !(outil === "rebond" && m.vy > 14 * V0))) { atterrir(); return false; }
+  if (m.controleAir) { rebondir(axe, 0.4 * REG.bouncy); return false; } // simple saut : il rebondit, sans outil
   if (outil === "grappin") {
     if (axe === "haut") { m.etat = "accroche"; m.vx = 0; m.vy = 0; m.ecrase = 0.4; vibrer(8); sonChoc(); return false; } // au plafond : il pend
-    rebondir(axe, 0.4); // contre un mur : il rebondit (plus d'accroche aux murs)
+    rebondir(axe, 0.4 * REG.bouncy); // contre un mur : il rebondit (plus d'accroche aux murs)
     return false;
   }
   if (outil === "rebond") {
@@ -305,8 +335,8 @@ function choc(axe) {
     return false;
   }
   // Perce : on casse devant soi ; si c'est de la roche dure, on s'arrête
-  const cx = m.x + LM / 2 + (axe === "x" ? Math.sign(m.vx) * 2 : 0);
-  const cy = m.y - HM / 2 + (axe === "haut" ? -2.5 : axe === "bas" ? 2 : 0);
+  const cx = m.x + LM / 2 + (axe === "x" ? Math.sign(m.vx) * 2 * E : 0);
+  const cy = m.y - HM / 2 + (axe === "haut" ? -2.5 * E : axe === "bas" ? 2 * E : 0);
   if (percer(cx, cy)) { m.vx *= 0.6; m.vy *= 0.6; return true; }
   if (axe === "x") m.vx = 0; else m.vy = 0;
   return false;
@@ -324,7 +354,7 @@ function deplacer(dx, dy) {
       if (!occupe(m.x + sx, m.y)) m.x += sx;
       else {
         let contourne = false;
-        for (const d of [-0.5, -1, -1.5, 0.5, 1]) if (!occupe(m.x + sx, m.y + d) && !occupe(m.x, m.y + d)) { m.y += d; m.x += sx; contourne = true; break; }
+        for (const d of [-0.5 * E, -1 * E, -1.5 * E, 0.5 * E, 1 * E]) if (!occupe(m.x + sx, m.y + d) && !occupe(m.x, m.y + d)) { m.y += d; m.x += sx; contourne = true; break; }
         if (!contourne && !choc("x")) { if (m.etat !== "air") return; xBloque = true; }
       }
     }
@@ -333,7 +363,7 @@ function deplacer(dx, dy) {
       if (!occupe(m.x, m.y + sy)) m.y += sy;
       else {
         let contourne = false;
-        if (sy < 0) for (const d of [0.5, -0.5, 1, -1]) if (!occupe(m.x + d, m.y + sy) && !occupe(m.x + d, m.y)) { m.x += d; m.y += sy; contourne = true; break; }
+        if (sy < 0) for (const d of [0.5 * E, -0.5 * E, 1 * E, -1 * E]) if (!occupe(m.x + d, m.y + sy) && !occupe(m.x + d, m.y)) { m.x += d; m.y += sy; contourne = true; break; }
         if (!contourne && !choc(sy > 0 ? "bas" : "haut")) return;
       }
     }
@@ -349,21 +379,21 @@ function marcher(dt) {
   const dir = Math.sign(ecart);
   m.sens = dir;
   m.pas += dt;
-  let reste = Math.min(Math.abs(ecart), VITESSE_MARCHE * (m.serre ? 0.45 : 1) * dt); // tassé : il avance moins vite
+  let reste = Math.min(Math.abs(ecart), REG.marche * (m.serre ? REG.rampage / 100 : 1) * dt); // tassé : il avance moins vite
   while (reste > 0) { // petits pas (vite, mais sans traverser de mur)
     const p = Math.min(0.4, reste); reste -= p;
     const nx = m.x + p * dir;
     if (!occupe(nx, m.y)) { m.x = nx; continue; }
     if (!m.serre && m.etat === "sol" && !occupe(nx, m.y, HM_SERRE)) { m.serre = true; m.x = nx; continue; } // passage bas : il se tasse et se faufile
     let passe = false;
-    for (const h of [0.5, 1, 1.4]) { // marche (ou bosse) à enjamber
+    for (const h of [0.5 * E, 1 * E, 1.4 * E]) { // marche (ou bosse) à enjamber
       if (!occupe(m.x, m.y - h) && !occupe(nx, m.y - h)) { m.x = nx; m.y -= h; m.ecrase = Math.max(m.ecrase, 0.2); passe = true; break; }
     }
     if (!passe) { // un vrai mur : petit rebond en arrière au lieu de rester figé contre
       m.cible = null;
       if (performance.now() - dernierBoing > 350) {
         dernierBoing = performance.now();
-        m.etat = "air"; m.vx = -dir * 5 * RYTHME; m.vy = -9 * RYTHME; m.controleAir = true; m.ecrase = 0.5;
+        m.etat = "air"; m.vx = -dir * 5 * V0; m.vy = -9 * V0; m.controleAir = true; m.ecrase = 0.5;
         vibrer(5);
       }
       return;
@@ -377,9 +407,9 @@ function sauter() {
   const m = mineur;
   if (m.coince || m.serre || m.etat === "air") return;
   if (m.etat === "sol" && !auSol()) return;
-  if (m.etat === "glisse") { m.vx = -m.murSens * VITESSE_MARCHE; m.sens = -m.murSens; } // saut de mur
-  else m.vx = dirTouche * VITESSE_MARCHE;
-  m.etat = "air"; m.vy = -SAUT; m.cible = null; m.controleAir = true;
+  if (m.etat === "glisse") { m.vx = -m.murSens * REG.marche; m.sens = -m.murSens; } // saut de mur
+  else m.vx = dirTouche * REG.marche;
+  m.etat = "air"; m.vy = -vSaut(); m.cible = null; m.controleAir = true;
   m.ecrase = -0.4; // il s'étire en partant
   sonSaut();
 }
@@ -392,7 +422,7 @@ function majMineur(dt) {
   if (m.serre && !occupe(m.x, m.y, HM)) m.serre = false; // assez de place : il se redresse
   m.tasse += ((m.serre ? 1 : 0) - m.tasse) * Math.min(1, dt * 8);
   m.coince = occupe(m.x, m.y);
-  if (m.coince) { m.vx = 0; m.vy = 0; m.cible = null; depenser(dt * 12); return; } // coincé : la lampe s'use
+  if (m.coince) { m.vx = 0; m.vy = 0; m.cible = null; depenser(dt * 12 * E * E); return; } // coincé : la lampe s'use
   if (m.etat === "accroche" && !occupe(m.x, m.y - 0.3)) m.etat = "air"; // le plafond a disparu
   if (m.etat === "glisse") {
     if (!occupe(m.x + m.murSens * 0.3, m.y)) m.etat = "air"; // plus de mur : il tombe
@@ -405,22 +435,22 @@ function majMineur(dt) {
     }
   }
   if (m.etat === "sol") {
-    if (dirTouche) m.cible = m.x + LM / 2 + dirTouche * 2; // touche maintenue : il avance
+    if (dirTouche) m.cible = m.x + LM / 2 + dirTouche * 2 * E; // touche maintenue : il avance
     if (m.cible !== null) marcher(dt);
     else m.pas = 0;
     if (!auSol()) {
       // Petite descente : il la suit au lieu de « tomber »
       let colle = false;
-      for (const h of [0.5, 1]) if (occupe(m.x, m.y + h + 0.05) && !occupe(m.x, m.y + h)) { m.y += h; colle = true; break; }
+      for (const h of [0.5 * E, 1 * E]) if (occupe(m.x, m.y + h + 0.05) && !occupe(m.x, m.y + h)) { m.y += h; colle = true; break; }
       if (!colle) { m.etat = "air"; m.vx = 0; m.vy = 0; }
     }
   }
   if (m.etat === "air") {
-    m.vy = Math.min(m.vy + GRAVITE * dt, CHUTE_MAX);
-    if (m.controleAir) m.vx += (dirTouche * VITESSE_MARCHE - m.vx) * Math.min(1, dt * 10);
+    m.vy = Math.min(m.vy + REG.gravite * dt, CHUTE_MAX);
+    if (m.controleAir) m.vx += (dirTouche * REG.marche - m.vx) * Math.min(1, dt * 10);
     if (Math.abs(m.vx) > 1) m.sens = Math.sign(m.vx);
     deplacer(m.vx * dt, m.vy * dt);
-    if (m.etat === "air" && m.vy >= 0 && auSol() && (m.controleAir || !(outil === "rebond" && m.vy > 14 * RYTHME))) atterrir();
+    if (m.etat === "air" && m.vy >= 0 && auSol() && (m.controleAir || !(outil === "rebond" && m.vy > 14 * V0))) atterrir();
   }
   // L'aplatissement revient doucement à la normale (effet ressort)
   m.ecrase += (0 - m.ecrase) * Math.min(1, dt * 9);
@@ -447,7 +477,7 @@ function noteCorniche(dt) {
   if (tempsCorniche > 0 || mineur.etat !== "sol" || !auSol() || eauDansBoite(mineur.x, mineur.y, 0.02)) return;
   tempsCorniche = 0.3;
   const der = corniches[corniches.length - 1];
-  if (der && Math.abs(der.x - mineur.x) + Math.abs(der.y - mineur.y) < 3) return;
+  if (der && Math.abs(der.x - mineur.x) + Math.abs(der.y - mineur.y) < 3 * E) return;
   corniches.push({ x: mineur.x, y: mineur.y });
   if (corniches.length > 30) corniches.shift();
 }
@@ -556,10 +586,11 @@ function majEau() {
 function majMatieres(dt) {
   let bouge = false;
   horlogeSable += dt;
-  while (horlogeSable >= 1 / (30 * RYTHME)) { horlogeSable -= 1 / (30 * RYTHME); if (majSable()) bouge = true; }
+  const pasSable = 1 / (30 * V0 * REG.matieres), pasEau = 1 / (150 * V0 * REG.matieres); // (plus de cases = plus de pas)
+  while (horlogeSable >= pasSable) { horlogeSable -= pasSable; if (majSable()) bouge = true; }
   horlogeEau += dt;
   let tours = 0; // (au plus 6 tours par image, pour ne jamais ralentir le jeu)
-  while (horlogeEau >= 1 / (150 * RYTHME) && tours++ < 6) { horlogeEau -= 1 / (150 * RYTHME); if (majEau()) bouge = true; }
+  while (horlogeEau >= pasEau && tours++ < 8) { horlogeEau -= pasEau; if (majEau()) bouge = true; }
   if (horlogeEau > 0.1) horlogeEau = 0;
   if (bouge) {
     lumiereSale = true;
@@ -574,7 +605,7 @@ function majGouttes() {
     const x = Math.floor(camX + Math.random() * largVue), y = Math.floor(camY + Math.random() * hautVue);
     if (typeA(x, y) !== VIDE || !solide(x, y - 1) || revele[idx(x, y)] < 200) continue;
     let eau = false;
-    for (let k = 2; k <= 6; k++) if (typeA(x, y - k) === EAU) { eau = true; break; }
+    for (let k = 2 * E; k <= 6 * E; k++) if (typeA(x, y - k) === EAU) { eau = true; break; }
     if (eau && Math.random() < 0.08 && particules.length < 200)
       particules.push({ x: x + 0.3 + Math.random() * 0.4, y: y + 0.05, vx: 0, vy: 0, vie: 3, coul: "rgb(150,200,240)", goutte: true });
   }
@@ -583,14 +614,15 @@ function majGouttes() {
 // ---------- 3 bis. Le lance-pierre ----------
 // On pose le doigt sur le mineur, on tire en arrière, on lâche : il part à l'opposé.
 
-// Portée réduite (lancer moins puissant), au rythme du jeu
-const FORCE_LANCER = 5.5 * RYTHME, VITESSE_LANCER_MAX = 55 * RYTHME, VITESSE_LANCER_MIN = 14 * RYTHME;
+// Lancer : la puissance vient des réglages de démo ; tirer plus loin du mineur = plus fort
+const FORCE_LANCER = 5.5 * 0.65, VITESSE_LANCER_MIN = 14 * V0;
+const vLancerMax = () => REG.lancer;
 
 function vitesseLancer(fx, fy) {
   let vx = (centreMineurX() - fx) * FORCE_LANCER, vy = (centreMineurY() - fy) * FORCE_LANCER;
   const v = Math.hypot(vx, vy);
-  if (v > VITESSE_LANCER_MAX) { vx *= VITESSE_LANCER_MAX / v; vy *= VITESSE_LANCER_MAX / v; }
-  return { vx, vy, v: Math.min(v, VITESSE_LANCER_MAX) };
+  if (v > vLancerMax()) { vx *= vLancerMax() / v; vy *= vLancerMax() / v; }
+  return { vx, vy, v: Math.min(v, vLancerMax()) };
 }
 
 function lancer(fx, fy) {
@@ -608,7 +640,7 @@ function trajetPrevu(fx, fy) {
   if (l.v < VITESSE_LANCER_MIN) return pts;
   let x = mineur.x, y = mineur.y, vx = l.vx, vy = l.vy;
   for (let n = 0; n < 150; n++) {
-    vy = Math.min(vy + GRAVITE / 60, CHUTE_MAX);
+    vy = Math.min(vy + REG.gravite / 60, CHUTE_MAX);
     x += vx / 60; y += vy / 60;
     if (occupe(x, y)) break;
     pts.push([x + LM / 2, y - HM / 2]);
@@ -619,13 +651,13 @@ function trajetPrevu(fx, fy) {
 // Zone où poser le doigt pour attraper le mineur (plus grande que lui, mais pas sous ses pieds,
 // pour qu'on puisse toujours creuser juste en dessous)
 function dansPrise(wx, wy) {
-  const marge = Math.max(1.5, 14 / taille); // au moins 14 px autour de lui, même vu de loin
+  const marge = Math.max(1.5 * E, 14 / taille); // au moins 14 px autour de lui, même vu de loin
   return wx >= mineur.x - marge && wx <= mineur.x + LM + marge && wy >= mineur.y - HM - marge && wy <= mineur.y + 0.3;
 }
 
 // La lampe est sur le casque, côté où il regarde
-const lampeX = () => Math.floor(mineur.x + (mineur.sens > 0 ? 1.6 : 0.4));
-const lampeY = () => Math.floor(mineur.y - 2.7);
+const lampeX = () => Math.floor(mineur.x + (mineur.sens > 0 ? 1.6 : 0.4) * E);
+const lampeY = () => Math.floor(mineur.y - 2.7 * E);
 const centreMineurX = () => mineur.x + LM / 2;
 const centreMineurY = () => mineur.y - HM / 2;
 
@@ -658,7 +690,7 @@ const COUL_SPRITE = {
 // Elle va donc loin dans les galeries et s'éteint vite dans la roche.
 // (Méthode des « seaux » : on traite d'abord les cases les plus proches.)
 
-const LR = 200;                        // coût maximum calculé (2 par pas)
+const LR = 400;                        // coût maximum calculé (2 par pas) : assez pour la plus grande portée de lampe
 const LW = LR + 1;                     // taille de la zone calculée autour de la lampe (en cases)
 const dist = new Uint16Array(LW * LW);
 const seaux = Array.from({ length: LR + 1 }, () => []);
@@ -708,7 +740,7 @@ function distLumiere(x, y) {
   return dist[ly * LW + lx];
 }
 
-let porteeActuelle = PORTEE_LUMIERE; // varie avec la flamme
+let porteeActuelle = 180; // varie avec la flamme
 // Luminosité d'une case (0 à 1), en tenant compte du souvenir
 function lumiereEn(x, y) {
   let l = 1 - distLumiere(x, y) / (2 * porteeActuelle);
@@ -744,7 +776,7 @@ let matiereGrattee = 0; // ce qu'on gratte en ce moment (pour le son)
 // ---------- Énergie (la lampe) ----------
 // Chaque bloc creusé use un peu la lampe (plus la roche est dure, plus ça coûte) ; marcher et lancer sont gratuits.
 // Quand elle est vide, l'expédition se termine. Les recharges trouvées dans la mine la remplissent.
-const BUDGET_ENERGIE = 2600;   // « points de dureté » qu'on peut creuser avec une lampe pleine (≈ 5 à 10 min)
+const BUDGET_ENERGIE = 2600 * E * E;   // « points de dureté » qu'on peut creuser avec une lampe pleine (≈ 5 à 10 min)
 let energie = 1, expeditionFinie = false, extinction = 0;
 function depenser(points) {
   if (expeditionFinie) return;
@@ -868,7 +900,10 @@ function dessinFossile(r) {
 }
 // Place un trésor (cristal ou fossile) centré vers (cx, cy), s'il tient entièrement dans la roche
 function placerCristal(cx, cy, r = alea, sorte = "cristal") {
-  const d = sorte === "fossile" ? dessinFossile(r) : dessinCristal(r);
+  const d0 = sorte === "fossile" ? dessinFossile(r) : dessinCristal(r);
+  // Échelle : chaque petit pixel du dessin devient E × E petits pixels (même taille réelle, blocs plus fins)
+  const d = { W: d0.W * E, H: d0.H * E, nom: d0.nom, pix: new Array(d0.W * E * d0.H * E).fill(null) };
+  for (let y = 0; y < d.H; y++) for (let x = 0; x < d.W; x++) d.pix[y * d.W + x] = d0.pix[Math.floor(y / E) * d0.W + Math.floor(x / E)];
   // Cadre réel du dessin
   let x0 = d.W, x1 = -1, y0 = d.H, y1 = -1;
   for (let y = 0; y < d.H; y++) for (let x = 0; x < d.W; x++) if (d.pix[y * d.W + x]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
@@ -947,64 +982,86 @@ function gratterCristal(c) {
   if (c.sorte === "fossile") {
     // Fossile : il ne casse pas, mais demande plus de travail. Tant qu'il n'est pas déterré, on n'avance pas.
     if (!cristalDeterre(c)) return;
-    c.usure += dtImage;
-    if (c.usure >= 3.5 / RYTHME) detacherCristal(c);
+    c.usure += dtImage * REG.rythme;
+    if (c.usure >= 3.5 / 0.65) detacherCristal(c);
     return;
   }
-  const deterre = cristalDeterre(c), doux = vitesseDoigt < VITESSE_DOUCE;
+  const deterre = cristalDeterre(c), doux = vitesseDoigt < REG.douceCrist;
   if (!deterre || !doux) { // encore pris dans la roche, ou doigt trop rapide : il se fissure
     if (c.fissure === 0) vibrer(8);
-    c.fissure += dtImage * (doux ? 0.55 : 1.6);
+    c.fissure += dtImage * REG.rythme * (doux ? 0.55 : 1.6);
     if (c.fissure >= 1) casserGrosCristal(c);
     return;
   }
-  c.usure += dtImage;
-  if (c.usure >= 1.4 / RYTHME) detacherCristal(c);
+  c.usure += dtImage * REG.rythme;
+  if (c.usure >= 1.4 / 0.65) detacherCristal(c);
 }
 
 let vitesseDoigt = 0; // vitesse du doigt sur l'écran (px/s), mesurée à chaque image
 let tempsImmobile = 0, croissanceGrattoir = 1;
 
-// Gratte autour du point (px, py) du monde pendant dt secondes
-function gratter(px, py, dt) {
-  if (expeditionFinie || energie <= 0) return;
-  const cmx = centreMineurX(), cmy = centreMineurY();
-  if ((px - cmx) ** 2 + (py - cmy) ** 2 > PORTEE * PORTEE) return; // trop loin du mineur
-  // Rayon de base (sous le doigt) ; si le doigt reste immobile, la zone grandit autour du centre (jusqu'à ×2)
-  const r0 = Math.max(0.5, rayonGrattoir() / taille), r = r0 * croissanceGrattoir;
-  // Équilibre : on enlève à peu près la même quantité de roche par seconde, quelle que soit la taille
-  const force = PUISSANCE * (RAYON_REF / r0) ** 2;
+// ---------- Minage en coups rythmés ----------
+// Le doigt posé donne de petits coups réguliers (réglage « coups par seconde »).
+// À chaque coup, les cases sous le grattoir perdent des points de vie : 1 au centre, 0,5 au bord.
+// Une case de terre demande « coups pour la terre » ; les autres matières, plus (voir RES).
+const rayonBase = () => Math.max(0.5, rayonGrattoir() / taille);
+const pvMax = t => RES[t] * REG.coupsTerre;
+function aPortee(px, py) { return (px - centreMineurX()) ** 2 + (py - centreMineurY()) ** 2 <= REG.portee * REG.portee; }
+
+// Un coup au point (px, py) du monde
+function frapper(px, py) {
+  if (expeditionFinie || energie <= 0 || !aPortee(px, py)) return false;
+  const r0 = rayonBase(), r = r0 * croissanceGrattoir;
+  let touche = 0, matiere = 0;
   for (let y = Math.floor(py - r); y <= py + r; y++) {
     for (let x = Math.floor(px - r); x <= px + r; x++) {
       const d = Math.hypot(x + 0.5 - px, y + 0.5 - py);
       if (d > r || !dansMonde(x, y)) continue;
       const i = idx(x, y), t = type[i];
       if (t === VIDE || t === EAU || t === SOCLE) continue;
-      matiereGrattee = t;
-      if ((t === CRISTAL || t === FOSSILE) && cristalDe[i] >= 0) { // gros cristal ou fossile : règles à part
-        const c = cristaux[cristalDe[i]];
-        if (c && c.vivant) gratterCristal(c);
-        continue;
-      }
-      usure[i] += dt * force * (d < r0 * 0.6 ? 1 : d < r0 ? 0.6 : 0.45);
-      if (usure[i] >= RES[t]) {
-        depenser(RES[t]);
-        detruire(x, y);
-        vibrer(RES[t] >= 3 ? 9 : 4);
-      }
+      if ((t === CRISTAL || t === FOSSILE) && cristalDe[i] >= 0) continue; // (gros trésors : voir « frotter »)
+      usure[i] += d < r0 * 0.5 ? 1 : 0.5; // le centre frappe plus fort
+      touche++; if (!matiere || RES[t] > RES[matiere]) matiere = t;
+      if (usure[i] >= pvMax(t)) { depenser(RES[t]); detruire(x, y); }
     }
+  }
+  if (touche) { sonCoup(matiere); vibrer(RES[matiere] >= 3 ? 9 : 5); }
+  return touche > 0;
+}
+
+// Les gros cristaux et fossiles, eux, se « frottent » en continu (doucement !) tant que le grattoir est dessus
+function frotterTresors(px, py) {
+  if (expeditionFinie || energie <= 0 || !aPortee(px, py)) return;
+  const r = rayonBase() * croissanceGrattoir;
+  for (let y = Math.floor(py - r); y <= py + r; y++) for (let x = Math.floor(px - r); x <= px + r; x++) {
+    if (!dansMonde(x, y) || Math.hypot(x + 0.5 - px, y + 0.5 - py) > r) continue;
+    const i = idx(x, y);
+    if (cristalDe[i] >= 0) { const c = cristaux[cristalDe[i]]; if (c && c.vivant) gratterCristal(c); }
   }
 }
 
-// Gratte le long du trajet du doigt depuis la dernière image (pour ne pas sauter de cases si on va vite)
-function gratterTrajet(ax, ay, bx, by, dt) {
-  const longueur = Math.hypot(bx - ax, by - ay);
-  // Vitesse du doigt (lissée), en px d'écran par seconde : sert aux cristaux fragiles
-  if (dt > 0) vitesseDoigt += (longueur * taille / dt - vitesseDoigt) * 0.5;
-  const pas = Math.min(0.8, Math.max(0.5, rayonGrattoir() / taille)); // jamais plus grand que le grattoir
-  const n = Math.max(1, Math.ceil(longueur / pas));
-  const part = Math.max(dt / n, dt * 0.35);
-  for (let k = 1; k <= n; k++) gratter(ax + (bx - ax) * k / n, ay + (by - ay) * k / n, part);
+// Avance le minage d'une image : mesure la vitesse du doigt, frotte les trésors, et donne les coups
+// (le long du trajet depuis le coup précédent, pour qu'un geste dessine une galerie continue)
+function majMinage(d, dtj) {
+  const ax = versMondeX(d.px), ay = versMondeY(d.py), bx = versMondeX(d.x), by = versMondeY(d.y);
+  const dtr = dtImage || 1 / 60;
+  vitesseDoigt += (Math.hypot(d.x - d.px, d.y - d.py) / dtr - vitesseDoigt) * 0.5;
+  frotterTresors(bx, by);
+  if (geste.dernierCoup === undefined) { // premier contact : un coup tout de suite
+    geste.dernierCoup = [bx, by]; geste.horloge = 0;
+    frapper(bx, by);
+    return;
+  }
+  geste.horloge += dtj;
+  const periode = 1 / REG.coupsSec;
+  while (geste.horloge >= periode) {
+    geste.horloge -= periode;
+    const [x0, y0] = geste.dernierCoup;
+    const long = Math.hypot(bx - x0, by - y0), pas = Math.max(0.5, rayonBase());
+    const n = Math.max(1, Math.ceil(long / pas));
+    for (let k = 1; k <= n; k++) frapper(x0 + (bx - x0) * k / n, y0 + (by - y0) * k / n);
+    geste.dernierCoup = [bx, by];
+  }
 }
 
 // ---------- 6. Poussière et mini-objets ----------
@@ -1014,7 +1071,7 @@ function poussiere(x, y, coul) {
   if (particules.length > 200 || Math.random() < 0.6) return;
   particules.push({
     x: x + 0.5, y: y + 0.5,
-    vx: (Math.random() - 0.5) * 10, vy: -Math.random() * 9,
+    vx: (Math.random() - 0.5) * 10 * E, vy: -Math.random() * 9 * E,
     vie: 0.4 + Math.random() * 0.3,
     coul: "rgb(" + Math.min(255, coul[0] * 1.3 | 0) + "," + Math.min(255, coul[1] * 1.25 | 0) + "," + Math.min(255, coul[2] * 1.2 | 0) + ")"
   });
@@ -1022,7 +1079,7 @@ function poussiere(x, y, coul) {
 function majParticules(dt) {
   for (let n = particules.length - 1; n >= 0; n--) {
     const p = particules[n];
-    p.vy += 50 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vie -= dt;
+    p.vy += 50 * E * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vie -= dt;
     const touche = solide(Math.floor(p.x), Math.floor(p.y)) || (p.goutte && typeA(Math.floor(p.x), Math.floor(p.y)) === EAU);
     if (p.vie <= 0 || touche) {
       particules.splice(n, 1);
@@ -1039,7 +1096,7 @@ let compteurSale = true;
 // Les mini-objets : chaque case creusée tombe, roule un peu, puis l'aimant du mineur les attire
 const objets = [];
 const MAX_OBJETS = 500;
-const AIMANT = 6;          // rayon de l'aimant (en cases) — à améliorer plus tard
+// (rayon de l'aimant : réglage de démo REG.aimant, en cases)
 function objetTombe(x, y, t, c) {
   if (t === SOCLE || t === EAU || t === VIDE) return;
   if (objets.length >= MAX_OBJETS) {
@@ -1051,7 +1108,7 @@ function objetTombe(x, y, t, c) {
     compteur[t] = (compteur[t] || 0) + 1; compteurSale = true; // sinon : directement dans le sac
     return;
   }
-  objets.push({ x: x + 0.5, y: y + 0.5, vx: (Math.random() - 0.5) * 5, vy: -Math.random() * 4, t, c, n: 1, repos: false });
+  objets.push({ x: x + 0.5, y: y + 0.5, vx: (Math.random() - 0.5) * 5 * E, vy: -Math.random() * 4 * E, t, c, n: 1, repos: false });
 }
 
 function majObjets(dt) {
@@ -1059,7 +1116,7 @@ function majObjets(dt) {
   for (let k = objets.length - 1; k >= 0; k--) {
     const o = objets[k];
     const dx = cx - o.x, dy = cy - o.y, d2 = dx * dx + dy * dy;
-    if (d2 < 1.2) { // ramassé !
+    if (d2 < 1.2 * E * E) { // ramassé !
       compteur[o.t] = (compteur[o.t] || 0) + o.n;
       compteurSale = true;
       sonRamasse(o.t);
@@ -1068,9 +1125,9 @@ function majObjets(dt) {
       objets.splice(k, 1);
       continue;
     }
-    if (d2 < AIMANT * AIMANT) { // l'aimant l'attire (il passe à travers la roche)
+    if (d2 < REG.aimant * REG.aimant) { // l'aimant l'attire (il passe à travers la roche)
       const d = Math.sqrt(d2);
-      o.vx += dx / d * 140 * RYTHME * dt; o.vy += dy / d * 140 * RYTHME * dt;
+      o.vx += dx / d * 140 * V0 * dt; o.vy += dy / d * 140 * V0 * dt;
       o.vx *= 0.9; o.vy *= 0.9;
       o.x += o.vx * dt; o.y += o.vy * dt;
       o.repos = false;
@@ -1080,13 +1137,13 @@ function majObjets(dt) {
       if (solide(Math.floor(o.x), Math.floor(o.y + 0.3))) continue;
       o.repos = false;
     }
-    o.vy = Math.min(o.vy + 60 * RYTHME * RYTHME * dt, 30 * RYTHME);
+    o.vy = Math.min(o.vy + 60 * 0.65 * V0 * dt, 30 * V0);
     const nx = o.x + o.vx * dt;
     if (solide(Math.floor(nx), Math.floor(o.y))) o.vx = -o.vx * 0.3; else o.x = nx;
     const ny = o.y + o.vy * dt;
     if (solide(Math.floor(o.x), Math.floor(ny + 0.25))) {
       o.y = Math.floor(ny + 0.25) - 0.25; o.vy = 0; o.vx *= 0.6;
-      if (Math.abs(o.vx) < 0.4) o.repos = true;
+      if (Math.abs(o.vx) < 0.4 * E) o.repos = true;
     } else o.y = ny;
   }
 }
@@ -1150,6 +1207,14 @@ function majSonGrattage() {
     son.filtre.frequency.setTargetAtTime(FREQ_GRATTE[matiereGrattee] || 900, t, 0.03);
     son.gainGratte.gain.setTargetAtTime(0.05, t, 0.02);
   } else son.gainGratte.gain.setTargetAtTime(0, t, 0.05);
+}
+// Un coup de grattoir : petit « tic » de bruit, plus aigu sur la roche dure
+function sonCoup(t) {
+  if (!son.actif || !son.ctx) return;
+  const a = son.ctx, h = a.currentTime, src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = son.bruit; f.type = "bandpass"; f.Q.value = 2.5; f.frequency.value = (FREQ_GRATTE[t] || 900) * (0.9 + Math.random() * 0.2);
+  g.gain.setValueAtTime(0.16, h); g.gain.exponentialRampToValueAtTime(0.0001, h + 0.07);
+  src.connect(f).connect(g).connect(a.destination); src.start(h, Math.random() * 0.5); src.stop(h + 0.08);
 }
 
 function bip(freq, duree, volume, forme = "sine") {
@@ -1271,11 +1336,11 @@ function majEntrees(dt) {
   matiereGrattee = 0;
   // Doigt immobile : le grattoir s'élargit peu à peu (centre d'abord, puis autour)
   if (geste && geste.type === "gratter" && vitesseDoigt < 40) tempsImmobile += dt; else tempsImmobile = 0;
-  croissanceGrattoir = 1 + Math.min(1, tempsImmobile * RYTHME);
+  croissanceGrattoir = 1 + (REG.grossit - 1) * Math.min(1, tempsImmobile * 0.65);
   if (!modeRegard && doigts.size === 1 && geste && geste.type === "gratter") {
     const d = doigts.values().next().value;
     const pret = !geste.surVide || geste.bouge || performance.now() - geste.t0 >= DUREE_TAP;
-    if (pret) gratterTrajet(versMondeX(d.px), versMondeY(d.py), versMondeX(d.x), versMondeY(d.y), dt);
+    if (pret) majMinage(d, dt * REG.rythme);
     d.px = d.x; d.py = d.y;
   }
   if (modeRegard && doigts.size >= 2) {
@@ -1305,7 +1370,7 @@ function majEntrees(dt) {
   let force = 0;
   if (geste && geste.type === "lancer" && !modeRegard) {
     const d = doigts.get(geste.id);
-    if (d) force = Math.min(1, vitesseLancer(versMondeX(d.x), versMondeY(d.y)).v / VITESSE_LANCER_MAX);
+    if (d) force = Math.min(1, vitesseLancer(versMondeX(d.x), versMondeY(d.y)).v / vLancerMax());
   }
   majSonTension(force);
   majSonGrattage();
@@ -1344,7 +1409,7 @@ let dpr = 1;    // densité de l'écran (le calque est dessiné à la vraie rés
 function redimensionner() {
   largVue = innerWidth / taille; hautVue = innerHeight / taille;
   // Le grain 4 × 4 des blocs n'est dessiné que quand il se voit (pour rester rapide)
-  const sub = taille >= 5 ? 4 : taille >= 2.5 ? 2 : 1; // (au-delà, 4 suffit : le grain reste fin)
+  const sub = taille >= 6 ? 4 : taille >= 3 ? 2 : 1; // (petits pixels par case : seulement ce qui se voit, pour rester rapide)
   // Une case de plus de chaque côté pour pouvoir glisser en douceur entre deux cases
   const l = Math.ceil(largVue) + 1, h = Math.ceil(hautVue) + 1;
   if (l !== vueL || h !== vueH || sub !== SUB || !image) {
@@ -1375,7 +1440,7 @@ function zoomerVers(nouvelle, ax, ay) {
 }
 
 function sauverZoom() {
-  try { localStorage.setItem("tunnel-zoom", String(tailleCible.toFixed(2))); } catch (e) {}
+  try { localStorage.setItem("tunnel-zoom2", String(tailleCible.toFixed(2))); } catch (e) {}
 }
 
 // La caméra vise le mineur (un peu au-dessus du milieu de l'écran), plus le décalage du regard
@@ -1388,7 +1453,7 @@ function cibleCamera() {
 }
 
 function majCamera(dt) {
-  const c = cibleCamera(), k = 1 - Math.exp(-dt * 6 * RYTHME);
+  const c = cibleCamera(), k = 1 - Math.exp(-dt * 6 * 0.65);
   camX += (c.x - camX) * k;
   camY += (c.y - camY) * k;
 }
@@ -1409,93 +1474,115 @@ function procheDuVide(x, y) {
          typeA(x + 2, y) === VIDE || typeA(x, y - 2) === VIDE || typeA(x, y + 2) === VIDE;
 }
 
+// Petites tables de « grain » toutes prêtes (128 × 128), pour ne pas recalculer le hasard figé de chaque petit pixel
+const BRUIT = [0, 1, 2, 3, 4].map(g => { const t = new Float32Array(128 * 128); for (let i = 0; i < t.length; i++) t[i] = hache(i & 127, i >> 7, 11 + g); return t; });
+
 // Le monde : chaque case est un petit carré de SUB × SUB pixels (grain doux, arêtes au bord des galeries)
+// (écrit « au plus court » : c'est la partie qui tourne le plus, des centaines de milliers de fois par seconde)
+let image32 = null, imageBuf = null;
+const NOIR32 = (255 << 24) | (10 << 16) | (7 << 8) | 6;
+const pack = (r, g, b) => (255 << 24) | ((b > 255 ? 255 : b | 0) << 16) | ((g > 255 ? 255 : g | 0) << 8) | (r > 255 ? 255 : r | 0);
 function dessinerMonde(temps, dt) {
-  const R = porteeActuelle;
+  const R2 = 2 * porteeActuelle;
   const scintille = Math.floor(temps * 4);
   const pasFondu = Math.min(255, Math.ceil(dt * 510)); // fondu complet en une demi-seconde
   const ox = Math.floor(camX), oy = Math.floor(camY);
-  const d = image.data, ligne = vueL * SUB * 4, pasSub = 4 / SUB;
+  if (imageBuf !== image.data.buffer) { imageBuf = image.data.buffer; image32 = new Uint32Array(imageBuf); }
+  const d = image32, ligne = vueL * SUB, pasSub = 4 / SUB;
+  const T0 = TEINTE[0], T1 = TEINTE[1], T2 = TEINTE[2];
+  const B0 = BRUIT[0], B1 = BRUIT[1], B2 = BRUIT[2], B3 = BRUIT[3], B4 = BRUIT[4];
+  const vid = (x, y) => x >= 0 && y >= 0 && x < LARG && y < PROF && type[y * LARG + x] === VIDE;
 
   for (let by = 0; by < vueH; by++) {
     const y = oy + by;
+    const ly = y - lumOy;
     for (let bx = 0; bx < vueL; bx++) {
       const x = ox + bx;
-      const base = by * SUB * ligne + bx * SUB * 4;
-      let noir = !dansMonde(x, y), r = 0, g = 0, b = 0, l = 0, t = 0, i = 0;
+      const base = by * SUB * ligne + bx * SUB;
+      let noir = x < 0 || y < 0 || x >= LARG || y >= PROF, l = 0, t = 0, i = 0;
       if (!noir) {
-        i = idx(x, y); t = type[i];
+        i = y * LARG + x; t = type[i];
         // Lumière directe de la lampe (adoucie)
-        l = 1 - distLumiere(x, y) / (2 * R);
+        const lx = x - lumOx;
+        const dl = (lx < 0 || ly < 0 || lx >= LW || ly >= LW) ? 65535 : dist[ly * LW + lx];
+        l = 1 - dl / R2;
         l = l <= 0 ? 0 : l * l * (3 - 2 * l);
-        // Fondu à la première découverte
+        // Fondu à la première découverte, puis souvenir des galeries déjà vues
         let rv = revele[i];
-        if (l > 0.04 && rv < 255) { rv = Math.min(255, rv + pasFondu); revele[i] = rv; }
-        const kr = rv / 255;
-        l *= kr;
-        if (l < MEMOIRE * kr && rv > 0 && procheDuVide(x, y)) l = MEMOIRE * kr;
-        if (l <= 0.004) noir = true;
+        if (l > 0.04 && rv < 255) { rv = rv + pasFondu > 255 ? 255 : rv + pasFondu; revele[i] = rv; }
+        if (rv === 0) noir = true;
+        else {
+          const kr = rv / 255;
+          l *= kr;
+          if (l < MEMOIRE * kr && procheDuVide(x, y)) l = MEMOIRE * kr;
+          if (l <= 0.004) noir = true;
+        }
       }
       if (noir) {
-        for (let j = 0; j < SUB; j++) { let q = base + j * ligne; for (let k = 0; k < SUB; k++, q += 4) { d[q] = 6; d[q + 1] = 7; d[q + 2] = 10; d[q + 3] = 255; } }
+        for (let j = 0; j < SUB; j++) { const q = base + j * ligne; for (let k = 0; k < SUB; k++) d[q + k] = NOIR32; }
         continue;
       }
       const vide = t === VIDE || t === EAU || t === CRISTAL || t === FOSSILE; // (cristaux et fossiles sont dessinés par-dessus, sur le calque)
-      let hautVide = false, gVide = false, dVide = false, basVide = false;
-      let niveauEau = 0, eauR = 0, eauG = 0, eauB = 0, vague = false, etapeFissure = 0;
+      let r, g, b, hautVide = false, gVide = false, dVide = false, basVide = false;
+      let niveauEau = 0, eau32 = 0, surf32 = 0, vague = false, etapeFissure = 0;
       if (vide) {
         // Paroi de fond : la roche de la couche, assombrie
         const P = COUL_COUCHE[couche[i]];
         r = P[0] * 0.34; g = P[1] * 0.34; b = P[2] * 0.34;
         if (t === EAU) {
           // Eau transparente : on voit la paroi au travers ; la case n'est remplie que jusqu'à son niveau
-          const pleinDessus = typeA(x, y - 1) === EAU;
+          const pleinDessus = y > 0 && type[i - LARG] === EAU;
           niveauEau = pleinDessus ? 1 : Math.min(1, eauNiv[i]);
-          eauR = (r * 0.45 + 40) * l * TEINTE[0]; eauG = (g * 0.45 + 95) * l * TEINTE[1]; eauB = (b * 0.45 + 165) * l * TEINTE[2];
+          eau32 = pack((r * 0.45 + 40) * l * T0, (g * 0.45 + 95) * l * T1, (b * 0.45 + 165) * l * T2);
+          surf32 = pack(150 * l, 200 * l, 240 * l);
           vague = !pleinDessus && Math.sin(x * 0.5 + temps * 3) > -0.2;
         }
       } else {
-        const c = couleurCase(x, y, t);
-        r = c[0]; g = c[1]; b = c[2];
+        const P = t === SOCLE ? COUL_SOCLE : (COUL[t] || COUL_ROCHE[t] || COUL_COUCHE[couche[i]]);
+        const n = 0.9 + 0.2 * B1[(x & 127) | ((y & 127) << 7)];
+        r = P[0] * n; g = P[1] * n; b = P[2] * n;
         const u = usure[i];
         // Case entamée (points de vie en baisse) : un peu plus claire, et fissurée par étapes
-        if (u > 0) { const k = 1 + 0.2 * u / RES[t]; r *= k; g *= k; b *= k; etapeFissure = 1 + Math.min(2, Math.floor(u / RES[t] * 3)); }
+        if (u > 0) { const f = Math.min(1, u / pvMax(t)), k = 1 + 0.15 * f; r *= k; g *= k; b *= k; etapeFissure = 1 + Math.min(4, Math.floor(f * 5)); } // 5 étapes visibles avant de casser
         if (COUL[t] && l > 0.3 && hache(x + scintille * 7, y + scintille * 13) > 0.975) { r = 255; g = 250; b = 225; }
-        hautVide = typeA(x, y - 1) === VIDE; basVide = typeA(x, y + 1) === VIDE;
-        gVide = typeA(x - 1, y) === VIDE; dVide = typeA(x + 1, y) === VIDE;
+        hautVide = vid(x, y - 1); basVide = vid(x, y + 1); gVide = vid(x - 1, y); dVide = vid(x + 1, y);
         if (SUB === 1 && (hautVide || basVide || gVide || dVide)) { r *= 0.75; g *= 0.75; b *= 0.75; }
       }
-      r *= l * TEINTE[0]; g *= l * TEINTE[1]; b *= l * TEINTE[2];
+      r *= l * T0; g *= l * T1; b *= l * T2;
+      if (SUB === 1) { // de loin : un seul pixel par case
+        let m = vide ? 0.85 + 0.3 * B0[((x >> 1) & 127) | (((y >> 1) & 127) << 7)] : 1;
+        if (t === EAU && niveauEau >= 0.5) { d[base] = vague && niveauEau < 1 ? surf32 : eau32; continue; }
+        if (t === SABLE) m *= B2[(x & 127) | ((y & 127) << 7)] < 0.5 ? 1.2 : 0.82;
+        if (etapeFissure) m *= 1 - 0.07 * etapeFissure; // (de loin : le bloc s'assombrit un peu à chaque étape)
+        d[base] = pack(r * m, g * m, b * m);
+        continue;
+      }
       // Les petits pixels de la case
       for (let j = 0; j < SUB; j++) {
-        let q = base + j * ligne;
-        const sy = y * 4 + j * pasSub;
-        for (let k = 0; k < SUB; k++, q += 4) {
+        const q0 = base + j * ligne;
+        const sy = y * 4 + j * pasSub, sy7 = (sy & 127) << 7, syp = ((sy >> 2) & 127) << 7;
+        for (let k = 0; k < SUB; k++) {
           const sx = x * 4 + k * pasSub;
           let m;
           if (t === EAU) {
             const haut = (j + 0.5) / SUB, surf = 1 - niveauEau;
-            if (haut >= surf) { // sous la surface
-              const ligneSurface = haut - surf < 1 / SUB;
-              if (ligneSurface && vague) { d[q] = 150 * l; d[q + 1] = 200 * l; d[q + 2] = 240 * l; }
-              else { d[q] = Math.min(255, eauR); d[q + 1] = Math.min(255, eauG); d[q + 2] = Math.min(255, eauB); }
-              d[q + 3] = 255;
-              continue;
-            }
-            m = 0.85 + 0.3 * hache(sx >> 2, sy >> 2);
-          } else if (vide) m = 0.85 + 0.3 * hache(sx >> 2, sy >> 2);
+            if (haut >= surf) { d[q0 + k] = (haut - surf < 1 / SUB && vague) ? surf32 : eau32; continue; } // sous la surface
+            m = 0.85 + 0.3 * B0[((sx >> 2) & 127) | syp];
+          } else if (vide) m = 0.85 + 0.3 * B0[((sx >> 2) & 127) | syp];
           else {
-            m = SUB === 1 ? 1 : 0.9 + 0.14 * hache(sx, sy);
-            if (t === SABLE) m *= hache(sx * 3 + 1, sy * 5 + 2) < 0.5 ? 1.25 : 0.78; // grain moucheté
-            if (etapeFissure && hache(sx * 5 + 1, sy * 9 + 7) < etapeFissure * 0.13) m *= 0.45; // fissures (3 étapes)
-            if (SUB > 1) {
-              if (hautVide && j === 0) m *= 1.12;            // arête claire au-dessus des galeries
-              else if (basVide && j === SUB - 1) m *= 0.68;  // dessous plus sombre
-              if (gVide && k === 0) m *= 0.75;
-              else if (dVide && k === SUB - 1) m *= 0.75;
+            const o = (sx & 127) | sy7;
+            m = 0.9 + 0.14 * B1[o];
+            if (t === SABLE) m *= B2[o] < 0.5 ? 1.25 : 0.78; // grain moucheté
+            if (etapeFissure) { // fissures qui s'élargissent, puis éclats qui se détachent (dernière étape)
+              if (B3[o] < etapeFissure * 0.08) m *= 0.45;
+              else if (etapeFissure === 5 && B4[o] < 0.22) m *= 0.18;
             }
+            if (hautVide && j === 0) m *= 1.12;            // arête claire au-dessus des galeries
+            else if (basVide && j === SUB - 1) m *= 0.68;  // dessous plus sombre
+            if (gVide && k === 0) m *= 0.75;
+            else if (dVide && k === SUB - 1) m *= 0.75;
           }
-          d[q] = Math.min(255, r * m); d[q + 1] = Math.min(255, g * m); d[q + 2] = Math.min(255, b * m); d[q + 3] = 255;
+          d[q0 + k] = pack(r * m, g * m, b * m);
         }
       }
     }
@@ -1513,11 +1600,35 @@ function dessinerCalque(temps) {
   cc.setTransform(dpr, 0, 0, dpr, 0, 0);
   const p = taille / 4;                       // taille d'un petit pixel à l'écran
   const net = v => Math.round(v * dpr) / dpr; // aligne sur les vrais pixels de l'écran
-  const carre = (x, y) => cc.fillRect(net(x), net(y), net(x + p) - net(x), net(y + p) - net(y));
+  const carre = (x, y, t = p) => cc.fillRect(net(x), net(y), net(x + t) - net(x), net(y + t) - net(y));
+  const q = p * E;                            // petit pixel des objets et du mineur (même taille réelle qu'avant)
   const scintille = Math.floor(temps * 4);
 
   // Un gros cristal (dans la roche, ou qui tombe une fois détaché) : petit pixel par petit pixel
   const dessinerUnCristal = (c, ox, oy, Lfixe) => {
+    // Rapide : sans fissure, on utilise une image toute prête (une par niveau de lumière, faite une seule fois)
+    if (c.fissure === 0) {
+      const L = Lfixe !== undefined ? Lfixe : lumiereEn(c.x + (c.w >> 1), c.y + (c.h >> 1));
+      if (L < 0.02) return;
+      const niv = Math.min(8, Math.round(L * 8));
+      c.images = c.images || [];
+      if (!c.images[niv]) {
+        const can = document.createElement("canvas"); can.width = c.W; can.height = c.H;
+        const g = can.getContext("2d"), k = niv / 8;
+        for (let py = 0; py < c.H; py++) for (let px = 0; px < c.W; px++) {
+          const col = c.pix[py * c.W + px];
+          if (!col) continue;
+          g.fillStyle = col === ENCRE ? CONTOUR : "rgb(" + Math.min(255, col[0] * k * TEINTE[0] | 0) + "," + Math.min(255, col[1] * k * TEINTE[1] | 0) + "," + Math.min(255, col[2] * k * TEINTE[2] | 0) + ")";
+          g.fillRect(px, py, 1, 1);
+        }
+        c.images[niv] = can;
+      }
+      cc.imageSmoothingEnabled = false;
+      cc.drawImage(c.images[niv], net(ox), net(oy), c.W * p, c.H * p);
+      // Petit éclat de lumière qui scintille, de temps en temps
+      if (L > 0.3) { const e = (hache(c.id, scintille) * c.pix.length) | 0; const col = c.pix[e]; if (col && col !== ENCRE) { cc.fillStyle = "#fffaf0"; carre(ox + (e % c.W) * p, oy + ((e / c.W) | 0) * p); } }
+      return;
+    }
     for (let py = 0; py < c.H; py++) for (let px = 0; px < c.W; px++) {
       const col = c.pix[py * c.W + px];
       if (!col) continue;
@@ -1545,7 +1656,7 @@ function dessinerCalque(temps) {
       dessinerUnCristal(c, versEcranX(o.x) - c.W * p / 2, versEcranY(o.y) - c.H * p / 2, Math.max(0.5, lumiereEn(Math.floor(o.x), Math.floor(o.y))));
       continue;
     }
-    const sx = versEcranX(o.x) - p, sy = versEcranY(o.y) - p;
+    const sx = versEcranX(o.x) - q, sy = versEcranY(o.y) - q;
     if (sx < -10 || sy < -10 || sx > innerWidth + 10 || sy > innerHeight + 10) continue;
     const f = formeDe(o.t), col = couleurObjet(o.t, o.c);
     const L = Math.max(0.3, lumiereEn(Math.floor(o.x), Math.floor(o.y)));
@@ -1553,11 +1664,11 @@ function dessinerCalque(temps) {
     const pris = new Set(f.map(([a, b]) => a + "," + b));
     cc.fillStyle = CONTOUR;
     for (const [a, b] of f) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
-      if (!pris.has((a + dx) + "," + (b + dy))) carre(sx + (a + dx) * p, sy + (b + dy) * p);
+      if (!pris.has((a + dx) + "," + (b + dy))) carre(sx + (a + dx) * q, sy + (b + dy) * q, q);
     f.forEach(([a, b], n) => {
       const k = (n === 0 && COUL[o.t]) ? 1.35 : 1; // petit reflet sur les objets précieux
       cc.fillStyle = "rgb(" + Math.min(255, col[0] * L * k * TEINTE[0] | 0) + "," + Math.min(255, col[1] * L * k * TEINTE[1] | 0) + "," + Math.min(255, col[2] * L * k * TEINTE[2] | 0) + ")";
-      carre(sx + a * p, sy + b * p);
+      carre(sx + a * q, sy + b * q, q);
     });
   }
 
@@ -1567,7 +1678,7 @@ function dessinerCalque(temps) {
     if (d) {
       const wx = versMondeX(d.x), wy = versMondeY(d.y);
       const r = Math.max(0.5, rayonGrattoir() / taille) * croissanceGrattoir;
-      const aPortee = (wx - centreMineurX()) ** 2 + (wy - centreMineurY()) ** 2 <= PORTEE * PORTEE;
+      const aPortee = (wx - centreMineurX()) ** 2 + (wy - centreMineurY()) ** 2 <= REG.portee * REG.portee;
       if (aPortee) {
         cc.fillStyle = "rgba(255,240,215,0.13)";
         for (let y = Math.floor(wy - r); y <= wy + r; y++) for (let x = Math.floor(wx - r); x <= wx + r; x++) {
@@ -1587,7 +1698,7 @@ function dessinerCalque(temps) {
     const cx = versEcranX(centreMineurX()), cy = versEcranY(centreMineurY());
     const rayon = HM / 2 * taille + Math.max(1.5 * taille, 14) * 0.8; // (à peu près la zone où on peut l'attraper)
     cc.fillStyle = "rgba(255,236,200,0.45)";
-    const t = Math.max(1.5, p);
+    const t = Math.max(1.5, q);
     for (let k = 0; k < 24; k++) {
       const a = k / 24 * Math.PI * 2 + temps * 0.35;
       cc.fillRect(net(cx + Math.cos(a) * rayon - t / 2), net(cy + Math.sin(a) * rayon - t / 2), t, t);
@@ -1597,13 +1708,14 @@ function dessinerCalque(temps) {
   // Le mineur, avec son effet « rebondi » : il s'aplatit en atterrissant, s'étire en vol, sautille en marchant
   const m = mineur;
   let ex = 1, ey = 1;
-  if (m.ecrase > 0) { ex = 1 + 0.22 * m.ecrase; ey = 1 - 0.28 * m.ecrase; }
-  else if (m.ecrase < 0) { ex = 1 + 0.15 * m.ecrase; ey = 1 - 0.2 * m.ecrase; }
+  const B = REG.bouncy, Sq = REG.squishy; // réglages : force des effets « rebondi » et « tassé »
+  if (m.ecrase > 0) { ex = 1 + 0.22 * m.ecrase * B; ey = 1 - 0.28 * m.ecrase * B; }
+  else if (m.ecrase < 0) { ex = 1 + 0.15 * m.ecrase * B; ey = 1 - 0.2 * m.ecrase * B; }
   if (m.etat === "air" && !m.controleAir) { const e = Math.min(0.18, Math.abs(m.vy) / 250); ex *= 1 - e * 0.6; ey *= 1 + e; }
-  if (m.tasse > 0.01) { ex *= 1 + 0.2 * m.tasse; ey *= 1 - 0.34 * m.tasse; } // tassé pour se faufiler : plus large, plus bas
+  if (m.tasse > 0.01) { ex *= 1 + 0.2 * m.tasse * Sq; ey *= 1 - Math.min(0.6, 0.34 * Sq) * m.tasse; } // tassé pour se faufiler : plus large, plus bas
   const marche = m.etat === "sol" && m.cible !== null;
-  const cadre = marche ? Math.floor(m.pas * 9 * RYTHME) % 2 : 0;
-  let saut = marche && cadre === 1 ? -p : 0;
+  const cadre = marche ? Math.floor(m.pas * 9 * 0.65) % 2 : 0;
+  let saut = marche && cadre === 1 ? -q : 0;
   if (m.etat === "sol" && !marche) { const s = Math.sin(temps * 2.4); ey *= 1 + 0.03 * s; ex *= 1 - 0.02 * s; } // il respire
   const piedsX = versEcranX(m.x + LM / 2), piedsY = versEcranY(m.y) + saut;
   cc.save();
@@ -1614,7 +1726,7 @@ function dessinerCalque(temps) {
     const ch = lignes[y][x];
     if (ch === ".") continue;
     cc.fillStyle = COUL_SPRITE[ch];
-    cc.fillRect((x - 4) * p, (y - 12) * p, p + 0.02, p + 0.02);
+    cc.fillRect((x - 4) * q, (y - 12) * q, q + 0.02, q + 0.02);
   }
   cc.restore();
 
@@ -1632,11 +1744,11 @@ function dessinerCalque(temps) {
   }
 
   // Poussière et gouttes
-  for (const q of particules) {
-    cc.globalAlpha = q.goutte ? 0.9 : Math.min(1, q.vie * 2.5);
-    cc.fillStyle = q.coul;
-    carre(versEcranX(q.x), versEcranY(q.y));
-    if (q.goutte && !q.eclabousse) carre(versEcranX(q.x), versEcranY(q.y) - p); // goutte allongée
+  for (const q2 of particules) {
+    cc.globalAlpha = q2.goutte ? 0.9 : Math.min(1, q2.vie * 2.5);
+    cc.fillStyle = q2.coul;
+    carre(versEcranX(q2.x), versEcranY(q2.y), q);
+    if (q2.goutte && !q2.eclabousse) carre(versEcranX(q2.x), versEcranY(q2.y) - q, q); // goutte allongée
   }
   cc.globalAlpha = 1;
 
@@ -1647,15 +1759,15 @@ function dessinerCalque(temps) {
       const fx = versMondeX(d.x), fy = versMondeY(d.y);
       cc.fillStyle = "rgba(205,150,105,0.9)";
       for (const bx of [m.x + 0.1, m.x + LM - 0.1]) { // deux brins d'élastique, des mains au doigt
-        const by = m.y - 1.2, ax = versEcranX(bx), ay = versEcranY(by);
-        const n = Math.ceil(Math.hypot(d.x - ax, d.y - ay) / p);
-        for (let k = 0; k <= n; k += 1) carre(ax + (d.x - ax) * k / n, ay + (d.y - ay) * k / n);
+        const by = m.y - 1.2 * E, ax = versEcranX(bx), ay = versEcranY(by);
+        const n = Math.ceil(Math.hypot(d.x - ax, d.y - ay) / q);
+        for (let k = 0; k <= n; k += 1) carre(ax + (d.x - ax) * k / n, ay + (d.y - ay) * k / n, q);
       }
       const pts = trajetPrevu(fx, fy), lim = Math.floor(pts.length * 0.35);
       for (let k = 2; k < lim; k += 3) {
         cc.globalAlpha = 0.85 * (1 - k / lim) + 0.1;
         cc.fillStyle = "#fff0dc";
-        cc.fillRect(net(versEcranX(pts[k][0]) - p), net(versEcranY(pts[k][1]) - p), p * 2, p * 2);
+        cc.fillRect(net(versEcranX(pts[k][0]) - q), net(versEcranY(pts[k][1]) - q), q * 2, q * 2);
       }
       cc.globalAlpha = 1;
       if (pts.length) m.sens = fx > centreMineurX() ? -1 : 1; // il regarde vers où il va partir
@@ -1709,16 +1821,72 @@ for (const b of document.querySelectorAll("#zoom button")) {
   });
 }
 
-// Taille du grattoir (curseur de démo)
-const curseurGrattoir = document.getElementById("taille-grattoir");
-let multGrattoir = 1;
-try { multGrattoir = +localStorage.getItem("tunnel-grattoir") || 1; } catch (e) {}
-curseurGrattoir.value = multGrattoir;
-curseurGrattoir.addEventListener("input", () => {
-  multGrattoir = +curseurGrattoir.value;
-  try { localStorage.setItem("tunnel-grattoir", String(multGrattoir)); } catch (e) {}
+// Taille du grattoir : réglage de démo « taille du pinceau »
+function rayonGrattoir() { return RAYON_ECRAN * REG.pinceau; }
+
+// ---------- Panneau des réglages de démo ----------
+// Un bouton (roue dentée) ouvre un panneau en bas : un curseur par réglage, avec sa valeur en chiffres.
+// Le jeu continue au-dessus, on voit l'effet tout de suite.
+const panneau = document.getElementById("panneau-demo");
+const listeReglages = document.getElementById("liste-reglages");
+const GROUPES = [
+  ["Général", ["rythme"]],
+  ["Mineur", ["marche", "saut", "gravite", "rampage", "squishy", "bouncy"]],
+  ["Minage", ["coupsSec", "coupsTerre", "pinceau", "grossit", "portee", "douceCrist"]],
+  ["Lance-pierre et monde", ["lancer", "aimant", "lampe", "matieres"]]
+];
+const formatReg = (k, v) => {
+  const d = DEF_REG[k], txt = (Math.round(v * 100) / 100).toLocaleString("fr-FR");
+  return d.u === "×" ? "×" + txt : d.u === "%" ? txt + " %" : txt;
+};
+function sauverReglages() { try { localStorage.setItem("tunnel-demo", JSON.stringify(REG)); } catch (e) {} }
+function construirePanneau() {
+  listeReglages.innerHTML = "";
+  for (const [titre, cles] of GROUPES) {
+    const h = document.createElement("div");
+    h.className = "groupe-reglages";
+    h.textContent = titre;
+    listeReglages.appendChild(h);
+    for (const k of cles) {
+      const d = DEF_REG[k];
+      const ligne = document.createElement("label");
+      ligne.className = "ligne-reglage";
+      ligne.innerHTML = `<span>${d.nom}${d.u && d.u !== "×" && d.u !== "%" ? ` <small>(${d.u})</small>` : ""}</span>` +
+        `<input type="range" min="${d.min}" max="${d.max}" step="${d.pas}" value="${REG[k]}"><b>${formatReg(k, REG[k])}</b>`;
+      const curseur = ligne.querySelector("input"), valeur = ligne.querySelector("b");
+      curseur.addEventListener("input", () => {
+        REG[k] = +curseur.value;
+        valeur.textContent = formatReg(k, REG[k]);
+        if (k === "lampe") lumiereSale = true;
+        sauverReglages();
+      });
+      listeReglages.appendChild(ligne);
+    }
+  }
+}
+construirePanneau();
+const boutonReglages = document.getElementById("bouton-reglages");
+boutonReglages.innerHTML = pixelsSvg([[6, 1, 2, 2], [6, 11, 2, 2], [1, 6, 2, 2], [11, 6, 2, 2], [3, 3, 2, 2], [9, 3, 2, 2], [3, 9, 2, 2], [9, 9, 2, 2], [4, 5, 1, 4], [9, 5, 1, 4], [5, 4, 4, 1], [5, 9, 4, 1]]);
+function ouvrirPanneau(ouvert) {
+  panneau.hidden = !ouvert;
+  boutonReglages.classList.toggle("actif", ouvert);
+}
+boutonReglages.addEventListener("click", () => ouvrirPanneau(panneau.hidden));
+document.getElementById("fermer-reglages").addEventListener("click", () => ouvrirPanneau(false));
+document.getElementById("reglages-defaut").addEventListener("click", () => {
+  regDefaut(); sauverReglages(); construirePanneau(); lumiereSale = true;
 });
-function rayonGrattoir() { return RAYON_ECRAN * multGrattoir; }
+// « Copier les valeurs » : un petit texte à coller dans la conversation
+document.getElementById("reglages-copier").addEventListener("click", async () => {
+  const texte = "Tunnel v" + VERSION + " — réglages :\n" +
+    Object.keys(DEF_REG).map(k => "- " + DEF_REG[k].nom + " : " + formatReg(k, REG[k]) + (DEF_REG[k].u && !["×", "%"].includes(DEF_REG[k].u) ? " " + DEF_REG[k].u : "")).join("\n");
+  const bouton = document.getElementById("reglages-copier");
+  try { await navigator.clipboard.writeText(texte); bouton.textContent = "Copié"; }
+  catch (e) { // (si la copie est refusée : on affiche le texte pour le copier à la main)
+    window.prompt("Copie ce texte :", texte);
+  }
+  setTimeout(() => { bouton.textContent = "Copier les valeurs"; }, 1500);
+});
 
 // Bouton son (coupé / activé)
 const DESSIN_HP = [[2, 5, 3, 4], [5, 4, 1, 6], [6, 3, 1, 8], [7, 2, 1, 10]];
@@ -1863,11 +2031,12 @@ function boucle(ms) {
 
   numImage++; dtImage = dt || 1 / 60;
   majEntrees(dt);
-  majMatieres(dt);
-  majMineur(dt);
+  const dtj = dt * REG.rythme; // temps « du jeu » (réglage rythme général)
+  majMatieres(dtj);
+  majMineur(dtj);
   majGouttes();
-  majObjets(dt);
-  majParticules(dt);
+  majObjets(dtj);
+  majParticules(dtj);
   if (lumiereSale) { calculerLumiere(); lumiereSale = false; }
   majCamera(dt);
   // La flamme vacille (plus fort quand l'énergie baisse), et sa portée suit l'énergie
@@ -1875,14 +2044,14 @@ function boucle(ms) {
   const vacille = 1 + (0.05 + 0.06 * faible) * Math.sin(temps * 6.3) + 0.035 * Math.sin(temps * 14.1 + 1) + (0.02 + 0.05 * faible) * Math.sin(temps * 23.7);
   if (energie <= 0 && !expeditionFinie) { extinction += dt; if (extinction > 1.5) finExpedition(); }
   const eteint = Math.max(0, 1 - extinction / 1.5);
-  porteeActuelle = PORTEE_LUMIERE * (0.12 + (0.18 * eteint) + 0.7 * energie) * vacille;
+  porteeActuelle = REG.lampe * (0.12 + (0.18 * eteint) + 0.7 * energie) * vacille;
   majBarreEnergie();
   dessinerMonde(temps, dt);
   dessinerCalque(temps);
   majCompteur(dt);
 
   // Profondeur : 10 cases = 1 mètre
-  const prof = Math.max(0, Math.round((Math.floor(mineur.y) - DEPART_Y) / 10));
+  const prof = Math.max(0, Math.round((Math.floor(mineur.y) - DEPART_Y) / (10 * E)));
   if (prof !== profAffichee) { profAffichee = prof; affProfondeur.textContent = prof + " m"; }
   if (prof > profMax) profMax = prof;
 

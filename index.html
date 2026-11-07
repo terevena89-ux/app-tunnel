@@ -39,7 +39,17 @@
   <div id="reglages-bas">
     <button id="bouton-son" aria-label="Activer le son"></button>
     <button id="bouton-lance" aria-label="Activer le lance-pierre"></button>
-    <input id="taille-grattoir" type="range" min="0.5" max="2" step="0.05" value="1" aria-label="Taille du grattoir">
+    <button id="bouton-reglages" aria-label="Réglages de démo"></button>
+  </div>
+
+  <!-- Réglages de DÉMO : panneau en bas, le jeu reste visible au-dessus -->
+  <div id="panneau-demo" hidden>
+    <div class="tete-reglages"><b>Réglages de démo</b><button id="fermer-reglages" aria-label="Fermer">✕</button></div>
+    <div id="liste-reglages"></div>
+    <div class="pied-reglages">
+      <button id="reglages-defaut">Valeurs par défaut</button>
+      <button id="reglages-copier">Copier les valeurs</button>
+    </div>
   </div>
   <!-- Déplacement : joystick (gauche / droite = marcher, vers le haut = sauter) -->
   <div id="joystick" aria-label="Joystick : marcher et sauter"><div id="joy-bouton"></div></div>

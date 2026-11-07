@@ -1,5 +1,11 @@
 # Tunnel — journal des nouveautés
 
+## 0.7.0 — 2026-11-07
+- Échelle ×2 : le mineur fait 4 × 6 blocs (même dessin, même taille à l'écran) ; les blocs sont 2 fois plus fins. La mine garde la même taille « réelle » (2 fois plus de cases en largeur et en profondeur) ; cristaux, fossiles, grottes, filons à la même échelle visuelle.
+- Minage en coups rythmés (4 par seconde par défaut) : centre plus fort que le bord, petit « tic » et vibration à chaque coup, 5 étapes de fissures avant de casser.
+- Panneau « Réglages de démo » (roue dentée en bas à gauche) : 17 curseurs chiffrés (rythme, marche, saut, gravité, rampage, squishy, bouncy, coups, pinceau, portée, cristaux, lancer, aimant, lampe, sable/eau), « Valeurs par défaut » et « Copier les valeurs ».
+- Dessin du monde accéléré ; zoom de 1,5 à 12 px par case.
+
 ## 0.6.0 — 2026-11-07
 - Rythme général plus posé (tout à 65 % : marche, chute, saut, sable, eau, aimant, grattage, caméra). Portée du lance-pierre réduite.
 - Gros cristaux : un seul grand cristal sur plusieurs cases, de forme toujours différente (aiguilles, grappe, géode ; bleu ou améthyste). Il faut le déterrer tout autour, puis le gratter doucement ; sinon il se fissure et casse en débris.

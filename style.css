@@ -124,12 +124,6 @@ html, body {
   align-items: center;
   gap: 4px;
 }
-#taille-grattoir {
-  width: 80px;
-  margin-left: 6px;
-  accent-color: #ffe7c2;
-  opacity: 0.6;
-}
 
 /* Énergie : trait très fin tout en haut de l'écran */
 #energie {
@@ -246,3 +240,33 @@ html, body {
   pointer-events: none;
 }
 #joystick.actif #joy-bouton { background: rgba(255, 236, 200, 0.4); }
+
+/* Réglages de démo : panneau en bas (le jeu reste visible au-dessus), qui défile */
+#panneau-demo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 55%;
+  z-index: 10;                 /* par-dessus le joystick et les boutons */
+  display: flex;
+  flex-direction: column;
+  background: rgba(27, 26, 31, 0.96);
+  border-top: 1px solid rgba(255, 236, 200, 0.14);
+  border-radius: 12px 12px 0 0;
+  color: #ffe7c2;
+  font: 12px monospace;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+#panneau-demo[hidden] { display: none; }
+.tete-reglages { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px; }
+.tete-reglages button { width: 32px; height: 32px; border: 0; border-radius: 6px; background: rgba(255, 236, 200, 0.08); color: #ffe7c2; font-size: 14px; }
+#liste-reglages { overflow-y: auto; padding: 0 14px; -webkit-overflow-scrolling: touch; }
+.groupe-reglages { margin: 10px 0 2px; color: #e9a72e; font-weight: bold; }
+.ligne-reglage { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.ligne-reglage span { flex: 1; min-width: 0; color: rgba(255, 231, 194, 0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ligne-reglage small { color: rgba(255, 231, 194, 0.45); }
+.ligne-reglage input { width: 110px; flex: none; accent-color: #e9a72e; }
+.ligne-reglage b { width: 52px; flex: none; text-align: right; }
+.pied-reglages { display: flex; gap: 8px; padding: 10px 14px 12px; }
+.pied-reglages button { flex: 1; height: 36px; border: 0; border-radius: 6px; background: rgba(255, 236, 200, 0.1); color: #ffe7c2; font: bold 12px monospace; }
