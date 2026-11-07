@@ -1,5 +1,14 @@
 # Tunnel — journal des nouveautés
 
+## 0.8.0 — 2026-11-07
+- Bouton saut rond en bas à droite ; le joystick ne sert plus qu'à marcher.
+- Gratter accélère le minage, avec 3 modes à essayer dans les réglages : « Vitesse » (plus on frotte vite, plus les coups s'enchaînent), « Allers-retours » (un coup en plus à chaque changement de sens), « Petite zone » (en frottant, coups plus rapides). Réglage « Accélération en grattant ».
+- Marches : le mineur monte et descend les marches en douceur, et la caméra suit la hauteur plus calmement quand il marche.
+
+## 0.7.1 — 2026-11-07
+- Valeurs par défaut des réglages de démo remplacées par celles choisies en jouant (rythme ×0,8, marche 20, saut 6, gravité 184, rampage 35 %, pinceau ×3, grossissement ×2,9, portée 37, cristaux 290 px/s, lancer 91).
+- Pinceau et grossissement : curseurs jusqu'à ×5 (la valeur choisie touchait le maximum).
+
 ## 0.7.0 — 2026-11-07
 - Échelle ×2 : le mineur fait 4 × 6 blocs (même dessin, même taille à l'écran) ; les blocs sont 2 fois plus fins. La mine garde la même taille « réelle » (2 fois plus de cases en largeur et en profondeur) ; cristaux, fossiles, grottes, filons à la même échelle visuelle.
 - Minage en coups rythmés (4 par seconde par défaut) : centre plus fort que le bord, petit « tic » et vibration à chaque coup, 5 étapes de fissures avant de casser.

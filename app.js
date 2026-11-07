@@ -11,7 +11,7 @@
 //   4. dessine les cases visibles, puis le mineur et la poussière.
 // =========================================================
 
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 
 // ---------- 1. Réglages ----------
 
@@ -44,20 +44,22 @@ RES[CAILLOU] = 4; RES[SCHISTE] = 7; RES[OBSIDIENNE] = 12;
 // Chaque réglage : valeur par défaut, minimum, maximum, pas, nom affiché, unité.
 // Ils sont gardés dans ce téléphone (pas synchronisés).
 const DEF_REG = {
-  rythme:      { v: 1,    min: 0.3, max: 2,    pas: 0.05, nom: "Rythme général", u: "×" },
-  marche:      { v: 29,   min: 5,   max: 80,   pas: 1,    nom: "Vitesse de marche", u: "cases/s" },
-  saut:        { v: 12,   min: 2,   max: 40,   pas: 0.5,  nom: "Hauteur de saut", u: "cases" },
-  gravite:     { v: 76,   min: 20,  max: 250,  pas: 1,    nom: "Gravité", u: "" },
-  rampage:     { v: 45,   min: 10,  max: 100,  pas: 5,    nom: "Vitesse de rampage", u: "%" },
+  rythme:      { v: 0.8,  min: 0.3, max: 2,    pas: 0.05, nom: "Rythme général", u: "×" },
+  marche:      { v: 20,   min: 5,   max: 80,   pas: 1,    nom: "Vitesse de marche", u: "cases/s" },
+  saut:        { v: 6,    min: 2,   max: 40,   pas: 0.5,  nom: "Hauteur de saut", u: "cases" },
+  gravite:     { v: 184,  min: 20,  max: 250,  pas: 1,    nom: "Gravité", u: "" },
+  rampage:     { v: 35,   min: 10,  max: 100,  pas: 5,    nom: "Vitesse de rampage", u: "%" },
   squishy:     { v: 1,    min: 0,   max: 3,    pas: 0.1,  nom: "Effet squishy", u: "×" },
   bouncy:      { v: 1,    min: 0,   max: 3,    pas: 0.1,  nom: "Effet bouncy", u: "×" },
   coupsSec:    { v: 4,    min: 1,   max: 12,   pas: 0.5,  nom: "Coups par seconde", u: "" },
   coupsTerre:  { v: 2,    min: 1,   max: 8,    pas: 1,    nom: "Coups pour la terre", u: "" },
-  pinceau:     { v: 1,    min: 0.4, max: 3,    pas: 0.1,  nom: "Taille du pinceau", u: "×" },
-  grossit:     { v: 2,    min: 1,   max: 4,    pas: 0.1,  nom: "Grossissement immobile", u: "×" },
-  portee:      { v: 44,   min: 10,  max: 120,  pas: 1,    nom: "Portée du minage", u: "cases" },
-  douceCrist:  { v: 220,  min: 40,  max: 800,  pas: 10,   nom: "Vitesse douce (cristaux)", u: "px/s" },
-  lancer:      { v: 72,   min: 20,  max: 200,  pas: 1,    nom: "Puissance du lancer", u: "" },
+  modeGratter: { v: 0,    min: 0,   max: 2,    pas: 1,    nom: "Mode gratter", u: "mode" },
+  accelGratter:{ v: 2,    min: 1,   max: 5,    pas: 0.1,  nom: "Accélération en grattant", u: "×" },
+  pinceau:     { v: 3,    min: 0.4, max: 5,    pas: 0.1,  nom: "Taille du pinceau", u: "×" },
+  grossit:     { v: 2.9,  min: 1,   max: 5,    pas: 0.1,  nom: "Grossissement immobile", u: "×" },
+  portee:      { v: 37,   min: 10,  max: 120,  pas: 1,    nom: "Portée du minage", u: "cases" },
+  douceCrist:  { v: 290,  min: 40,  max: 800,  pas: 10,   nom: "Vitesse douce (cristaux)", u: "px/s" },
+  lancer:      { v: 91,   min: 20,  max: 200,  pas: 1,    nom: "Puissance du lancer", u: "" },
   aimant:      { v: 12,   min: 0,   max: 50,   pas: 1,    nom: "Rayon de l'aimant", u: "cases" },
   lampe:       { v: 180,  min: 60,  max: 200,  pas: 5,    nom: "Portée de la lampe", u: "cases" },
   matieres:    { v: 1,    min: 0.2, max: 3,    pas: 0.05, nom: "Vitesse sable / eau", u: "×" }
@@ -263,7 +265,8 @@ const mineur = {
   murSens: 0,                  // côté du mur contre lequel il glisse (-1 / 1)
   coince: false,               // du sable lui est tombé dessus
   serre: false,                // il se faufile dans un passage bas (2/3 de sa taille) (tassé, ralenti)
-  tasse: 0                     // tassement visible (0 à 1), suit « serre » en douceur
+  tasse: 0,                    // tassement visible (0 à 1), suit « serre » en douceur
+  lisseY: 0                    // décalage visuel (en cases) pour monter / descendre une marche en douceur
 };
 let dirTouche = 0;             // -1 gauche, 1 droite (touches du clavier ou boutons à l'écran)
 
@@ -387,7 +390,7 @@ function marcher(dt) {
     if (!m.serre && m.etat === "sol" && !occupe(nx, m.y, HM_SERRE)) { m.serre = true; m.x = nx; continue; } // passage bas : il se tasse et se faufile
     let passe = false;
     for (const h of [0.5 * E, 1 * E, 1.4 * E]) { // marche (ou bosse) à enjamber
-      if (!occupe(m.x, m.y - h) && !occupe(nx, m.y - h)) { m.x = nx; m.y -= h; m.ecrase = Math.max(m.ecrase, 0.2); passe = true; break; }
+      if (!occupe(m.x, m.y - h) && !occupe(nx, m.y - h)) { m.x = nx; m.y -= h; m.lisseY += h; passe = true; break; }
     }
     if (!passe) { // un vrai mur : petit rebond en arrière au lieu de rester figé contre
       m.cible = null;
@@ -441,7 +444,7 @@ function majMineur(dt) {
     if (!auSol()) {
       // Petite descente : il la suit au lieu de « tomber »
       let colle = false;
-      for (const h of [0.5 * E, 1 * E]) if (occupe(m.x, m.y + h + 0.05) && !occupe(m.x, m.y + h)) { m.y += h; colle = true; break; }
+      for (const h of [0.5 * E, 1 * E]) if (occupe(m.x, m.y + h + 0.05) && !occupe(m.x, m.y + h)) { m.y += h; m.lisseY -= h; colle = true; break; }
       if (!colle) { m.etat = "air"; m.vx = 0; m.vy = 0; }
     }
   }
@@ -454,6 +457,8 @@ function majMineur(dt) {
   }
   // L'aplatissement revient doucement à la normale (effet ressort)
   m.ecrase += (0 - m.ecrase) * Math.min(1, dt * 9);
+  // Marche franchie : le dessin rattrape la vraie position en douceur (pas d'à-coup)
+  if (m.etat !== "sol") m.lisseY = 0; else m.lisseY *= Math.exp(-dt * 12);
   if (Math.floor(m.x) !== ax || Math.floor(m.y) !== ay) lumiereSale = true;
   noteCorniche(dt);
   if (dansLEau()) retourCorniche();
@@ -1042,27 +1047,52 @@ function frotterTresors(px, py) {
 
 // Avance le minage d'une image : mesure la vitesse du doigt, frotte les trésors, et donne les coups
 // (le long du trajet depuis le coup précédent, pour qu'un geste dessine une galerie continue)
+// Gratter (frotter le doigt) accélère le minage. Trois façons à essayer (réglage « mode gratter ») :
+//   0 = plus on frotte vite, plus les coups s'enchaînent (jusqu'à « accélération max ») ;
+//   1 = chaque aller-retour du doigt donne un coup en plus ;
+//   2 = en frottant, la zone reste petite (pas de grossissement) mais les coups vont « accélération max » fois plus vite.
+const SEUIL_FROTTE = 60; // px/s : au-delà, on considère que le doigt frotte
+function coupLeLong(bx, by) { // un coup tout le long du trajet depuis le coup précédent
+  const [x0, y0] = geste.dernierCoup;
+  const long = Math.hypot(bx - x0, by - y0), pas = Math.max(0.5, rayonBase());
+  const n = Math.max(1, Math.ceil(long / pas));
+  for (let k = 1; k <= n; k++) frapper(x0 + (bx - x0) * k / n, y0 + (by - y0) * k / n);
+  geste.dernierCoup = [bx, by];
+}
 function majMinage(d, dtj) {
-  const ax = versMondeX(d.px), ay = versMondeY(d.py), bx = versMondeX(d.x), by = versMondeY(d.y);
+  const bx = versMondeX(d.x), by = versMondeY(d.y);
   const dtr = dtImage || 1 / 60;
-  vitesseDoigt += (Math.hypot(d.x - d.px, d.y - d.py) / dtr - vitesseDoigt) * 0.5;
+  const ddx = d.x - d.px, ddy = d.y - d.py;
+  vitesseDoigt += (Math.hypot(ddx, ddy) / dtr - vitesseDoigt) * 0.5;
+  const frotte = vitesseDoigt > SEUIL_FROTTE;
+  enTrainDeFrotter = frotte;
   frotterTresors(bx, by);
   if (geste.dernierCoup === undefined) { // premier contact : un coup tout de suite
-    geste.dernierCoup = [bx, by]; geste.horloge = 0;
+    geste.dernierCoup = [bx, by]; geste.horloge = 0; geste.sensX = 0; geste.sensY = 0; geste.course = 0;
     frapper(bx, by);
     return;
   }
+  // Cadence des coups
+  let cadence = REG.coupsSec;
+  if (REG.modeGratter === 0) cadence *= 1 + (REG.accelGratter - 1) * Math.min(1, vitesseDoigt / 600);
+  else if (REG.modeGratter === 2 && frotte) cadence *= REG.accelGratter;
+  // Mode « aller-retour » : un coup en plus à chaque changement de sens du doigt
+  if (REG.modeGratter === 1) {
+    geste.course += Math.hypot(ddx, ddy);
+    const sx = Math.sign(ddx), sy = Math.sign(ddy);
+    const axeX = Math.abs(ddx) >= Math.abs(ddy);
+    const demiTour = axeX ? (sx && geste.sensX && sx !== geste.sensX) : (sy && geste.sensY && sy !== geste.sensY);
+    if (sx) geste.sensX = sx; if (sy) geste.sensY = sy;
+    if (demiTour && geste.course > 6) { geste.course = 0; coupLeLong(bx, by); }
+  }
   geste.horloge += dtj;
-  const periode = 1 / REG.coupsSec;
+  const periode = 1 / cadence;
   while (geste.horloge >= periode) {
     geste.horloge -= periode;
-    const [x0, y0] = geste.dernierCoup;
-    const long = Math.hypot(bx - x0, by - y0), pas = Math.max(0.5, rayonBase());
-    const n = Math.max(1, Math.ceil(long / pas));
-    for (let k = 1; k <= n; k++) frapper(x0 + (bx - x0) * k / n, y0 + (by - y0) * k / n);
-    geste.dernierCoup = [bx, by];
+    coupLeLong(bx, by);
   }
 }
+let enTrainDeFrotter = false;
 
 // ---------- 6. Poussière et mini-objets ----------
 
@@ -1454,8 +1484,10 @@ function cibleCamera() {
 
 function majCamera(dt) {
   const c = cibleCamera(), k = 1 - Math.exp(-dt * 6 * 0.65);
+  // En marchant, la caméra suit la hauteur plus doucement (les marches ne secouent pas l'écran)
+  const ky = mineur.etat === "sol" && !modeRegard ? 1 - Math.exp(-dt * 1.8) : k;
   camX += (c.x - camX) * k;
-  camY += (c.y - camY) * k;
+  camY += (c.y - camY) * ky;
 }
 
 // ---------- 10. Dessin ----------
@@ -1717,7 +1749,7 @@ function dessinerCalque(temps) {
   const cadre = marche ? Math.floor(m.pas * 9 * 0.65) % 2 : 0;
   let saut = marche && cadre === 1 ? -q : 0;
   if (m.etat === "sol" && !marche) { const s = Math.sin(temps * 2.4); ey *= 1 + 0.03 * s; ex *= 1 - 0.02 * s; } // il respire
-  const piedsX = versEcranX(m.x + LM / 2), piedsY = versEcranY(m.y) + saut;
+  const piedsX = versEcranX(m.x + LM / 2), piedsY = versEcranY(m.y + m.lisseY) + saut;
   cc.save();
   cc.translate(net(piedsX), net(piedsY));
   cc.scale(ex * (m.sens > 0 ? 1 : -1), ey);
@@ -1832,11 +1864,12 @@ const listeReglages = document.getElementById("liste-reglages");
 const GROUPES = [
   ["Général", ["rythme"]],
   ["Mineur", ["marche", "saut", "gravite", "rampage", "squishy", "bouncy"]],
-  ["Minage", ["coupsSec", "coupsTerre", "pinceau", "grossit", "portee", "douceCrist"]],
+  ["Minage", ["coupsSec", "coupsTerre", "modeGratter", "accelGratter", "pinceau", "grossit", "portee", "douceCrist"]],
   ["Lance-pierre et monde", ["lancer", "aimant", "lampe", "matieres"]]
 ];
 const formatReg = (k, v) => {
   const d = DEF_REG[k], txt = (Math.round(v * 100) / 100).toLocaleString("fr-FR");
+  if (d.u === "mode") return ["Vitesse", "Allers-retours", "Petite zone"][v] || v; // (les 3 façons de gratter)
   return d.u === "×" ? "×" + txt : d.u === "%" ? txt + " %" : txt;
 };
 function sauverReglages() { try { localStorage.setItem("tunnel-demo", JSON.stringify(REG)); } catch (e) {} }
@@ -1851,7 +1884,7 @@ function construirePanneau() {
       const d = DEF_REG[k];
       const ligne = document.createElement("label");
       ligne.className = "ligne-reglage";
-      ligne.innerHTML = `<span>${d.nom}${d.u && d.u !== "×" && d.u !== "%" ? ` <small>(${d.u})</small>` : ""}</span>` +
+      ligne.innerHTML = `<span>${d.nom}${d.u && !["×", "%", "mode"].includes(d.u) ? ` <small>(${d.u})</small>` : ""}</span>` +
         `<input type="range" min="${d.min}" max="${d.max}" step="${d.pas}" value="${REG[k]}"><b>${formatReg(k, REG[k])}</b>`;
       const curseur = ligne.querySelector("input"), valeur = ligne.querySelector("b");
       curseur.addEventListener("input", () => {
@@ -1879,7 +1912,7 @@ document.getElementById("reglages-defaut").addEventListener("click", () => {
 // « Copier les valeurs » : un petit texte à coller dans la conversation
 document.getElementById("reglages-copier").addEventListener("click", async () => {
   const texte = "Tunnel v" + VERSION + " — réglages :\n" +
-    Object.keys(DEF_REG).map(k => "- " + DEF_REG[k].nom + " : " + formatReg(k, REG[k]) + (DEF_REG[k].u && !["×", "%"].includes(DEF_REG[k].u) ? " " + DEF_REG[k].u : "")).join("\n");
+    Object.keys(DEF_REG).map(k => "- " + DEF_REG[k].nom + " : " + formatReg(k, REG[k]) + (DEF_REG[k].u && !["×", "%", "mode"].includes(DEF_REG[k].u) ? " " + DEF_REG[k].u : "")).join("\n");
   const bouton = document.getElementById("reglages-copier");
   try { await navigator.clipboard.writeText(texte); bouton.textContent = "Copié"; }
   catch (e) { // (si la copie est refusée : on affiche le texte pour le copier à la main)
@@ -1923,7 +1956,14 @@ boutonLance.addEventListener("click", () => {
 });
 majBoutonLance();
 
-// Joystick (en bas à gauche) : pousser à gauche / à droite = marcher, pousser vers le haut = sauter
+// Bouton saut (en bas à droite)
+const boutonSaut = document.getElementById("bouton-saut");
+boutonSaut.innerHTML = pixelsSvg([[6, 3, 2, 1], [5, 4, 4, 1], [4, 5, 6, 1], [3, 6, 8, 1], [6, 7, 2, 4]]);
+boutonSaut.addEventListener("pointerdown", e => { e.preventDefault(); boutonSaut.classList.add("appuye"); sauter(); });
+for (const ev of ["pointerup", "pointercancel", "pointerleave"]) boutonSaut.addEventListener(ev, () => boutonSaut.classList.remove("appuye"));
+boutonSaut.addEventListener("contextmenu", e => e.preventDefault());
+
+// Joystick (en bas à gauche) : pousser à gauche / à droite = marcher (le saut a son propre bouton, en bas à droite)
 const joystick = document.getElementById("joystick");
 const joyBouton = document.getElementById("joy-bouton");
 const JOY_RAYON = 34;          // jusqu'où le bouton peut aller (px)
@@ -1936,10 +1976,6 @@ function lireJoystick(e) {
   joyBouton.style.transform = "translate(" + dx.toFixed(1) + "px," + dy.toFixed(1) + "px)";
   const ancien = dirBarre;
   dirBarre = dx > 10 ? 1 : dx < -10 ? -1 : 0;
-  // Saut : une seule fois à chaque poussée vers le haut (il faut revenir avant de ressauter)
-  const haut = dy < -JOY_RAYON * 0.6;
-  if (haut && !joyHaut) sauter();
-  joyHaut = haut;
   if (dirBarre && mineur.etat === "accroche") mineur.etat = "air";
   if (dirBarre !== ancien) majDirTouche();
 }
