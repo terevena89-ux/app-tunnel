@@ -1,5 +1,15 @@
 # Tunnel — journal des nouveautés
 
+## 0.6.0 — 2026-11-07
+- Rythme général plus posé (tout à 65 % : marche, chute, saut, sable, eau, aimant, grattage, caméra). Portée du lance-pierre réduite.
+- Gros cristaux : un seul grand cristal sur plusieurs cases, de forme toujours différente (aiguilles, grappe, géode ; bleu ou améthyste). Il faut le déterrer tout autour, puis le gratter doucement ; sinon il se fissure et casse en débris.
+- Gros fossiles (ammonite, grand os, poisson, crâne, trilobite) : à déterrer aussi ; ils ne cassent pas mais demandent plus de travail.
+- Bandeau en haut avec le dessin et le nom de la trouvaille quand on ramasse un cristal ou un fossile.
+- Visuel de la zone qu'on creuse : cercle fin sous le doigt + cases visées légèrement éclaircies (cercle pâle si trop loin du mineur).
+- Lance-pierre actif : petit cercle pointillé qui tourne autour du mineur.
+- Mineur « squishy » : il se tasse pour se faufiler dans un passage de 2 cases de haut, plus lentement.
+- Joystick en bas à gauche à la place de la barre : gauche / droite pour marcher, vers le haut pour sauter.
+
 ## 0.5.0 — 2026-11-07
 - Énergie : chaque bloc creusé use la lampe (plus la roche est dure, plus ça coûte ; marcher et lancer sont gratuits). Sa lumière porte moins loin et vacille plus quand elle faiblit ; un trait très fin en haut de l'écran la montre aussi.
 - Recharges : les capsules vertes ramassées redonnent de l'énergie. Coincé dans le sable, la lampe s'use.

@@ -29,6 +29,9 @@
     </div>
   </div>
 
+  <!-- Bandeau « trouvaille » (gros cristal ou fossile ramassé) -->
+  <div id="trouvaille" hidden><canvas id="trouvaille-dessin"></canvas><span id="trouvaille-nom"></span></div>
+
   <!-- Ce qu'on a ramassé (rempli par app.js) -->
   <div id="compteur"></div>
 
@@ -38,11 +41,8 @@
     <button id="bouton-lance" aria-label="Activer le lance-pierre"></button>
     <input id="taille-grattoir" type="range" min="0.5" max="2" step="0.05" value="1" aria-label="Taille du grattoir">
   </div>
-  <!-- Déplacement : une barre large (gauche / droite) et un bouton saut au-dessus à droite -->
-  <div id="barre" data-dir="0" aria-label="Se déplacer à gauche ou à droite">
-    <span class="fleche-g"></span><span class="fleche-d"></span>
-  </div>
-  <button id="bouton-saut" aria-label="Sauter"></button>
+  <!-- Déplacement : joystick (gauche / droite = marcher, vers le haut = sauter) -->
+  <div id="joystick" aria-label="Joystick : marcher et sauter"><div id="joy-bouton"></div></div>
 
   <!-- Outils du lance-pierre, en haut à droite (les dessins sont ajoutés par app.js) -->
   <div id="outils">
