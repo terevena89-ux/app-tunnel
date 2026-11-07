@@ -1,5 +1,16 @@
 # Tunnel — journal des nouveautés
 
+## 0.5.0 — 2026-11-07
+- Énergie : chaque bloc creusé use la lampe (plus la roche est dure, plus ça coûte ; marcher et lancer sont gratuits). Sa lumière porte moins loin et vacille plus quand elle faiblit ; un trait très fin en haut de l'écran la montre aussi.
+- Recharges : les capsules vertes ramassées redonnent de l'énergie. Coincé dans le sable, la lampe s'use.
+- Cristaux fragiles : il faut d'abord dégager la roche autour (au moins 2 côtés), puis gratter doucement (~1 seconde). Pris dans la roche ou gratté trop vite, il se fissure puis casse en débris sans valeur (bruit de verre).
+- Fin d'expédition : quand la lampe s'éteint, bilan (profondeur et butin) et bouton « Nouvelle expédition » (nouvelle mine).
+- Minage : les blocs ont des points de vie ; nouvelles roches dures de couleurs différentes (caillou gris, schiste brun-rouge, obsidienne violet-noir), presque absentes au départ puis de plus en plus nombreuses. Fissures en 3 étapes sur un bloc entamé.
+- Grattoir : si le doigt reste immobile, la zone s'élargit autour du centre (jusqu'à 2 fois en 1 seconde).
+- Commandes : plus de toucher pour marcher ; grande barre gauche / droite en bas et bouton saut au-dessus à droite ; bouton pour activer ou non le lance-pierre ; profondeur et version passées en haut.
+- Saut plus haut, lancer moins puissant ; contre un mur, le mineur rebondit au lieu de s'accrocher ou de rester figé, et glisse sur les coins pour passer.
+- Démo : couches rapprochées du départ et quelques cristaux tout près pour tester vite.
+
 ## 0.4.0 — 2026-11-07
 - Le sable s'écroule quand on creuse dessous (il glisse aussi en biais). S'il tombe sur le mineur, il est coincé jusqu'à ce qu'on le dégage.
 - L'eau coule vraiment : elle descend, s'étale et se met à niveau, et continue de couler même quand on ne touche plus l'écran. Si elle atteint le mineur, il revient à la dernière corniche sûre (ou au départ).

@@ -16,21 +16,33 @@
   <!-- Calque par-dessus : le mineur, les mini-objets et la poussière, dessinés bien nets -->
   <canvas id="calque"></canvas>
 
+  <!-- Énergie de la lampe : un trait très fin tout en haut -->
+  <div id="energie"><div id="energie-niveau"></div></div>
+
+  <!-- Fin d'expédition (quand la lampe s'éteint) -->
+  <div id="fin" hidden>
+    <div class="fin-carte">
+      <h1>Expédition terminée</h1>
+      <p class="fin-prof">Profondeur atteinte <b id="fin-profondeur">0 m</b></p>
+      <div id="fin-butin"></div>
+      <button id="fin-rejouer">Nouvelle expédition</button>
+    </div>
+  </div>
+
   <!-- Ce qu'on a ramassé (rempli par app.js) -->
   <div id="compteur"></div>
 
-  <!-- En bas à gauche : son, touches de déplacement, taille du grattoir -->
+  <!-- Tout en bas à gauche : son, lance-pierre (activé ou non), taille du grattoir -->
   <div id="reglages-bas">
     <button id="bouton-son" aria-label="Activer le son"></button>
-    <button id="bouton-manette" aria-label="Afficher les touches de déplacement"></button>
+    <button id="bouton-lance" aria-label="Activer le lance-pierre"></button>
     <input id="taille-grattoir" type="range" min="0.5" max="2" step="0.05" value="1" aria-label="Taille du grattoir">
   </div>
-  <!-- Touches de déplacement (optionnelles) -->
-  <div id="touches" hidden>
-    <button data-touche="g" aria-label="Aller à gauche"></button>
-    <button data-touche="d" aria-label="Aller à droite"></button>
-    <button data-touche="saut" aria-label="Sauter"></button>
+  <!-- Déplacement : une barre large (gauche / droite) et un bouton saut au-dessus à droite -->
+  <div id="barre" data-dir="0" aria-label="Se déplacer à gauche ou à droite">
+    <span class="fleche-g"></span><span class="fleche-d"></span>
   </div>
+  <button id="bouton-saut" aria-label="Sauter"></button>
 
   <!-- Outils du lance-pierre, en haut à droite (les dessins sont ajoutés par app.js) -->
   <div id="outils">
@@ -45,7 +57,7 @@
     <button data-zoom="1" aria-label="Voir de plus près"><svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="2" fill="currentColor"/><rect x="6" y="3" width="2" height="8" fill="currentColor"/></svg></button>
   </div>
 
-  <!-- Profondeur, discrète en bas de l'écran -->
+  <!-- Profondeur et version, discrètes en haut au milieu -->
   <div id="profondeur">0 m</div>
   <div id="version"></div>
 

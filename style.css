@@ -40,11 +40,11 @@ html, body {
 #zoom {
   position: absolute;
   right: 10px;
-  bottom: calc(28px + env(safe-area-inset-bottom));
+  bottom: calc(8px + env(safe-area-inset-bottom));
   display: flex;
   gap: 4px;
 }
-#outils button, #zoom button, #reglages-bas button, #touches button {
+#outils button, #zoom button, #reglages-bas button, #bouton-saut {
   width: 32px;
   height: 32px;
   padding: 4px;
@@ -59,14 +59,17 @@ html, body {
   background: rgba(255, 236, 200, 0.2);
   color: #ffe7c2;
 }
-#zoom button:active, #touches button:active { background: rgba(255, 236, 200, 0.2); color: #ffe7c2; }
-#outils svg, #zoom svg, #reglages-bas svg, #touches svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
+#zoom button:active, #bouton-saut:active { background: rgba(255, 236, 200, 0.2); color: #ffe7c2; }
+#outils svg, #zoom svg, #reglages-bas svg, #bouton-saut svg, #barre svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
+/* Lance-pierre désactivé : ses outils s'effacent */
+#outils.eteint { opacity: 0.35; }
 
+/* Profondeur et version : en haut au milieu (le bas de l'écran est pour les pouces) */
 #profondeur {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(10px + env(safe-area-inset-bottom));
+  top: calc(10px + env(safe-area-inset-top));
   text-align: center;
   font: bold 11px monospace;
   color: rgba(255, 240, 220, 0.4);
@@ -75,11 +78,49 @@ html, body {
 
 #version {
   position: absolute;
-  right: 8px;
-  bottom: calc(10px + env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  top: calc(24px + env(safe-area-inset-top));
+  text-align: center;
   font: 10px monospace;
   color: rgba(255, 240, 220, 0.18);
   pointer-events: none;
+}
+
+/* Barre de déplacement : large, en bas ; la moitié touchée s'allume */
+#barre {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(48px + env(safe-area-inset-bottom));
+  height: 56px;
+  border-radius: 8px;
+  background: rgba(255, 236, 200, 0.07);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#barre span { width: 26px; height: 26px; color: rgba(255, 231, 194, 0.45); }
+#barre[data-dir="-1"] { background: linear-gradient(90deg, rgba(255, 236, 200, 0.2) 50%, rgba(255, 236, 200, 0.07) 50%); }
+#barre[data-dir="1"] { background: linear-gradient(90deg, rgba(255, 236, 200, 0.07) 50%, rgba(255, 236, 200, 0.2) 50%); }
+#barre[data-dir="-1"] .fleche-g, #barre[data-dir="1"] .fleche-d { color: #ffe7c2; }
+
+/* Bouton saut : au-dessus de la barre, à droite */
+#bouton-saut {
+  position: absolute;
+  right: 10px;
+  bottom: calc(112px + env(safe-area-inset-bottom));
+  width: 60px !important;
+  height: 52px !important;
+  padding: 12px !important;
+  border-radius: 8px !important;
+  background: rgba(255, 236, 200, 0.1) !important;
+  color: #ffe7c2 !important;
+  touch-action: none;
 }
 
 /* Calque du mineur et des objets : par-dessus le monde, le doigt passe au travers */
@@ -109,11 +150,11 @@ html, body {
   outline: 1px solid rgba(26, 20, 32, 0.8);
 }
 
-/* En bas à gauche : son, touches, taille du grattoir */
+/* Tout en bas à gauche : son, lance-pierre, taille du grattoir */
 #reglages-bas {
   position: absolute;
   left: 10px;
-  bottom: calc(28px + env(safe-area-inset-bottom));
+  bottom: calc(8px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   gap: 4px;
@@ -125,14 +166,62 @@ html, body {
   opacity: 0.6;
 }
 
-/* Touches de déplacement (optionnelles), au-dessus des réglages */
-#touches {
+/* Énergie : trait très fin tout en haut de l'écran */
+#energie {
   position: absolute;
-  left: 10px;
-  bottom: calc(72px + env(safe-area-inset-bottom));
-  display: flex;
-  gap: 6px;
+  left: 0;
+  right: 0;
+  top: env(safe-area-inset-top);
+  height: 2px;
+  pointer-events: none;
 }
-#touches[hidden] { display: none; }
-#touches button { width: 48px; height: 48px; padding: 10px; }
-#touches button[data-touche="saut"] { margin-left: 12px; }
+#energie-niveau {
+  height: 100%;
+  width: 100%;
+  background: rgba(233, 167, 46, 0.55);
+}
+
+/* Fin d'expédition : petite carte au centre, sur la mine assombrie */
+#fin {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 9, 12, 0.6);
+  padding: 16px;
+}
+#fin[hidden] { display: none; }
+.fin-carte {
+  width: 100%;
+  max-width: 300px;
+  background: #1b1a1f;
+  border: 1px solid rgba(255, 236, 200, 0.12);
+  border-radius: 10px;
+  padding: 16px;
+  color: #ffe7c2;
+  font: 13px monospace;
+}
+.fin-carte h1 { margin: 0 0 6px; font-size: 16px; font-weight: bold; }
+.fin-prof { margin: 0 0 12px; color: rgba(255, 231, 194, 0.6); }
+.fin-prof b { color: #ffe7c2; }
+#fin-butin div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 236, 200, 0.06);
+}
+#fin-butin i { width: 8px; height: 8px; outline: 1px solid rgba(26, 20, 32, 0.8); flex: none; }
+#fin-butin span { flex: 1; color: rgba(255, 231, 194, 0.7); }
+#fin-rejouer {
+  margin-top: 14px;
+  width: 100%;
+  height: 40px;
+  border: 0;
+  border-radius: 6px;
+  background: #e9a72e;
+  color: #26304f;
+  font: bold 13px monospace;
+  cursor: pointer;
+}
