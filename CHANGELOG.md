@@ -1,5 +1,11 @@
 # Tunnel — journal des nouveautés
 
+## 0.9.0 — 2026-11-07
+- « Jus » (effets qui rendent chaque geste satisfaisant), réglable avec le curseur « Intensité des effets » (0 à ×2) : petite secousse quand un bloc casse, éclats qui sautent, chiffres « +N » qui pop au-dessus du mineur en ramassant, ligne du compteur qui grossit un instant, bip de ramassage qui monte d'une note en série. Gros cristal ou fossile : grosse secousse, gerbe d'étincelles, anneau de lumière et « Cristal ! » / « Fossile ! ».
+- Blocs abîmés mais pas cassés : ils se réparent tout seuls (curseurs « attente » 2 s et « durée » 10 s ; 0 = jamais).
+- Gratter : seul le mode « Allers-retours » est gardé ; en grattant, la zone rétrécit (curseur « Rétrécit en grattant », ×0,6 par défaut), l'inverse du doigt immobile qui l'élargit.
+- Puissance du lancer : 120 par défaut.
+
 ## 0.8.0 — 2026-11-07
 - Bouton saut rond en bas à droite ; le joystick ne sert plus qu'à marcher.
 - Gratter accélère le minage, avec 3 modes à essayer dans les réglages : « Vitesse » (plus on frotte vite, plus les coups s'enchaînent), « Allers-retours » (un coup en plus à chaque changement de sens), « Petite zone » (en frottant, coups plus rapides). Réglage « Accélération en grattant ».

@@ -107,6 +107,7 @@ html, body {
   pointer-events: none;
   text-shadow: 0 1px 0 #08090c;
 }
+#compteur div { transform-origin: left center; } /* (le petit saut grossit depuis la gauche) */
 #compteur i {
   display: inline-block;
   width: 7px;
