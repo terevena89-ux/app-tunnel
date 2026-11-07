@@ -1,0 +1,49 @@
+/* =========================================================
+   Tunnel — mise en page
+   Le jeu est entièrement dessiné dans le canvas : ici on se
+   contente de le faire remplir l'écran et d'empêcher le
+   téléphone de faire défiler / zoomer la page.
+   ========================================================= */
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;            /* pas de barre de défilement */
+  position: fixed;             /* la page ne bouge jamais, même si le dessin dépasse d'un pixel */
+  inset: 0;
+  background: #08090c;         /* noir de la mine */
+  overscroll-behavior: none;   /* pas d'effet « tirer pour rafraîchir » */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#jeu {
+  position: absolute;
+  left: 0;
+  top: 0;
+  touch-action: none;          /* tous les gestes vont au jeu, pas au navigateur */
+  image-rendering: pixelated;  /* agrandir sans flou : vrais gros pixels */
+  image-rendering: crisp-edges;
+  will-change: transform;
+}
+
+#profondeur {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  text-align: center;
+  font: bold 11px monospace;
+  color: rgba(255, 240, 220, 0.4);
+  pointer-events: none;        /* le doigt passe au travers */
+}
+
+#version {
+  position: absolute;
+  right: 8px;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  font: 10px monospace;
+  color: rgba(255, 240, 220, 0.18);
+  pointer-events: none;
+}

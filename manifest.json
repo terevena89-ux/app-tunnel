@@ -1,0 +1,12 @@
+{
+  "name": "Tunnel",
+  "short_name": "Tunnel",
+  "description": "Petit jeu de minage tranquille, à jouer en écoutant un podcast.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#08090c",
+  "theme_color": "#08090c"
+}

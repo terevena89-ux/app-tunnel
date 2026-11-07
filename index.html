@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <!-- user-scalable=no : on ne veut pas que deux doigts zooment la page (ils servent à regarder ailleurs) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Tunnel</title>
+  <meta name="description" content="Petit jeu de minage tranquille, à jouer en écoutant un podcast.">
+  <meta name="theme-color" content="#08090c">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Le jeu entier est dessiné dans ce « tableau » (canvas) -->
+  <canvas id="jeu"></canvas>
+
+  <!-- Profondeur, discrète en bas de l'écran -->
+  <div id="profondeur">0 m</div>
+  <div id="version"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
