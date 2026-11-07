@@ -15,6 +15,8 @@
   <canvas id="jeu"></canvas>
   <!-- Calque par-dessus : le mineur, les mini-objets et la poussière, dessinés bien nets -->
   <canvas id="calque"></canvas>
+  <!-- Compagnon (TEST) : une vraie image (GIF animé), positionnée par app.js -->
+  <img id="compagnon" alt="" hidden>
 
   <!-- Énergie de la lampe : un trait très fin tout en haut -->
   <div id="energie"><div id="energie-niveau"></div></div>
@@ -39,7 +41,14 @@
   <div id="reglages-bas">
     <button id="bouton-son" aria-label="Activer le son"></button>
     <button id="bouton-lance" aria-label="Activer le lance-pierre"></button>
+    <button id="bouton-compagnon" aria-label="Choisir un compagnon"></button>
     <button id="bouton-reglages" aria-label="Réglages de démo"></button>
+  </div>
+
+  <!-- Compagnon (TEST) : choisir le starter actif, ou aucun -->
+  <div id="panneau-compagnon" hidden>
+    <div class="tete-reglages"><b>Compagnon</b><button id="fermer-compagnon" aria-label="Fermer">✕</button></div>
+    <div id="liste-compagnons"></div>
   </div>
 
   <!-- Réglages de DÉMO : panneau en bas, le jeu reste visible au-dessus -->

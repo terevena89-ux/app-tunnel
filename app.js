@@ -11,7 +11,7 @@
 //   4. dessine les cases visibles, puis le mineur et la poussière.
 // =========================================================
 
-const VERSION = "0.9.0";
+const VERSION = "0.10.0";
 
 // ---------- 1. Réglages ----------
 
@@ -776,6 +776,7 @@ function detruire(x, y) {
   usure[i] = 0;
   lumiereSale = true;
   reveiller(x, y); // le sable au-dessus peut tomber, l'eau à côté peut couler
+  gagnerXPCompagnon();
 }
 
 let matiereGrattee = 0; // ce qu'on gratte en ce moment (pour le son)
@@ -1183,6 +1184,61 @@ const anneaux = [];
 // Série de ramassages rapides : le petit bip monte d'une note à chaque fois (comme les jetons de Balatro)
 let serieRamasse = 0, dernierRamasse = 0;
 
+// ---------- Compagnon (TEST) ----------
+// Un compagnon suit le mineur et attire les trouvailles un peu plus loin (bonus d'aimant).
+// Il gagne de l'XP à chaque bloc miné et évolue à des paliers raccourcis (test rapide, pas les vrais niveaux du jeu).
+// Choisi dans un petit menu ; gardé sur ce téléphone (comme le reste de Tunnel, pas de synchro Firebase).
+const LIGNES_COMPAGNON = {
+  bulbizarre: { noms: ["Bulbizarre", "Herbizarre", "Florizarre"], sprites: ["compagnons/001_left.gif", "compagnons/002_left.gif", "compagnons/003_left.gif"] },
+  salameche:  { noms: ["Salamèche", "Reptincel", "Dracaufeu"],     sprites: ["compagnons/004_left.gif", "compagnons/005_left.gif", "compagnons/006_left.gif"] },
+  carapuce:   { noms: ["Carapuce", "Carabaffe", "Tortank"],        sprites: ["compagnons/007_left.gif", "compagnons/008_left.gif", "compagnons/009_left.gif"] }
+};
+const SEUILS_XP_COMPAGNON = [40, 120]; // blocs minés pour évoluer (raccourci de test ; vrais jeux : niveau 16 puis 32-36)
+const BONUS_AIMANT_COMPAGNON = [0, 4, 8]; // cases supplémentaires d'aimant, selon le stade (0, 1 ou 2)
+const DECALAGE_COMPAGNON = 2.4 * E; // à quelle distance derrière le mineur il marche
+
+let compagnonXP = { bulbizarre: 0, salameche: 0, carapuce: 0 };
+let compagnonActif = null; // clé de LIGNES_COMPAGNON, ou null = aucun compagnon
+try {
+  const s = JSON.parse(localStorage.getItem("tunnel-compagnons") || "{}");
+  if (s.xp) for (const k in s.xp) if (k in compagnonXP) compagnonXP[k] = s.xp[k];
+  if (s.actif && s.actif in LIGNES_COMPAGNON) compagnonActif = s.actif;
+} catch (e) {}
+function sauverCompagnons() { try { localStorage.setItem("tunnel-compagnons", JSON.stringify({ xp: compagnonXP, actif: compagnonActif })); } catch (e) {} }
+function stadeCompagnon(cle) {
+  const xp = compagnonXP[cle] || 0;
+  return xp >= SEUILS_XP_COMPAGNON[1] ? 2 : xp >= SEUILS_XP_COMPAGNON[0] ? 1 : 0;
+}
+function aimantEffectif() {
+  return REG.aimant + (compagnonActif ? BONUS_AIMANT_COMPAGNON[stadeCompagnon(compagnonActif)] : 0);
+}
+function celebrerEvolution(cle, stade) {
+  bulle(0, 1, LIGNES_COMPAGNON[cle].noms[stade] + " !");
+  gerbe(centreMineurX(), centreMineurY(), "rgb(200,255,210)", Math.round(20 * REG.jus));
+  anneaux.push({ x: centreMineurX(), y: centreMineurY(), age: 0, coul: "190,255,210" });
+  secouer(0.8); vibrer(16);
+}
+// Un bloc miné donne 1 XP au compagnon actif (voir l'appel dans detruire())
+function gagnerXPCompagnon() {
+  if (!compagnonActif) return;
+  const avant = stadeCompagnon(compagnonActif);
+  compagnonXP[compagnonActif]++;
+  const apres = stadeCompagnon(compagnonActif);
+  if (apres > avant) celebrerEvolution(compagnonActif, apres);
+  sauverCompagnons();
+}
+
+// Position du compagnon : suit le mineur avec un peu de retard, un peu derrière lui
+const compagnon = { x: DEPART_X, y: DEPART_Y, sens: 1 };
+function majCompagnon(dtj) {
+  if (!compagnonActif) return;
+  const cibleX = mineur.x + LM / 2 - mineur.sens * DECALAGE_COMPAGNON;
+  const k = Math.min(1, dtj * 5);
+  compagnon.x += (cibleX - compagnon.x) * k;
+  compagnon.y += (mineur.y - compagnon.y) * k;
+  if (Math.abs(cibleX - compagnon.x) > 0.3 * E) compagnon.sens = cibleX > compagnon.x ? 1 : -1;
+}
+
 // Ce qu'on a ramassé (par type de matière)
 const compteur = {};
 const ajoutCompteur = {}; // moment du dernier ajout, par matière (pour faire « sauter » sa ligne)
@@ -1208,6 +1264,7 @@ function objetTombe(x, y, t, c) {
 
 function majObjets(dt) {
   const cx = centreMineurX(), cy = centreMineurY();
+  const rayonAimant = aimantEffectif(), r2Aimant = rayonAimant * rayonAimant;
   for (let k = objets.length - 1; k >= 0; k--) {
     const o = objets[k];
     const dx = cx - o.x, dy = cy - o.y, d2 = dx * dx + dy * dy;
@@ -1231,7 +1288,7 @@ function majObjets(dt) {
       objets.splice(k, 1);
       continue;
     }
-    if (d2 < REG.aimant * REG.aimant) { // l'aimant l'attire (il passe à travers la roche)
+    if (d2 < r2Aimant) { // l'aimant l'attire (il passe à travers la roche) ; le compagnon peut augmenter sa portée
       const d = Math.sqrt(d2);
       o.vx += dx / d * 140 * V0 * dt; o.vy += dy / d * 140 * V0 * dt;
       o.vx *= 0.9; o.vy *= 0.9;
@@ -2040,6 +2097,7 @@ boutonReglages.innerHTML = pixelsSvg([[6, 1, 2, 2], [6, 11, 2, 2], [1, 6, 2, 2],
 function ouvrirPanneau(ouvert) {
   panneau.hidden = !ouvert;
   boutonReglages.classList.toggle("actif", ouvert);
+  if (ouvert) ouvrirPanneauCompagnon(false); // un seul panneau ouvert à la fois
 }
 boutonReglages.addEventListener("click", () => ouvrirPanneau(panneau.hidden));
 document.getElementById("fermer-reglages").addEventListener("click", () => ouvrirPanneau(false));
@@ -2092,6 +2150,54 @@ boutonLance.addEventListener("click", () => {
   majBoutonLance();
 });
 majBoutonLance();
+
+// Bouton compagnon (TEST) : ouvre un petit panneau pour choisir le starter actif, ou aucun
+const boutonCompagnon = document.getElementById("bouton-compagnon");
+const panneauCompagnon = document.getElementById("panneau-compagnon");
+const listeCompagnons = document.getElementById("liste-compagnons");
+boutonCompagnon.innerHTML = pixelsSvg([[5, 2, 2, 2], [8, 2, 2, 2], [3, 4, 2, 2], [10, 4, 2, 2], [4, 6, 7, 2], [3, 8, 9, 2]]); // petite empreinte de patte
+function construirePanneauCompagnons() {
+  listeCompagnons.innerHTML = "";
+  const ajouterLigne = (cle, nom, sprite, texte, actif) => {
+    const ligne = document.createElement("button");
+    ligne.className = "ligne-compagnon" + (actif ? " actif" : "");
+    ligne.innerHTML = (sprite ? `<img src="${sprite}" alt="">` : `<span class="aucun-compagnon"></span>`) +
+      `<span class="nom-compagnon">${nom}</span><small>${texte}</small>`;
+    ligne.addEventListener("click", () => {
+      compagnonActif = cle;
+      sauverCompagnons();
+      construirePanneauCompagnons();
+    });
+    listeCompagnons.appendChild(ligne);
+  };
+  ajouterLigne(null, "Aucun", null, "", compagnonActif === null);
+  for (const cle in LIGNES_COMPAGNON) {
+    const l = LIGNES_COMPAGNON[cle], stade = stadeCompagnon(cle), xp = compagnonXP[cle] || 0;
+    const texte = stade < 2 ? xp + " / " + SEUILS_XP_COMPAGNON[stade] + " blocs" : "Évolution complète";
+    ajouterLigne(cle, l.noms[stade], l.sprites[stade], texte, compagnonActif === cle);
+  }
+}
+function ouvrirPanneauCompagnon(ouvert) {
+  panneauCompagnon.hidden = !ouvert;
+  boutonCompagnon.classList.toggle("actif", ouvert);
+  if (ouvert) { construirePanneauCompagnons(); ouvrirPanneau(false); }
+}
+boutonCompagnon.addEventListener("click", () => ouvrirPanneauCompagnon(panneauCompagnon.hidden));
+document.getElementById("fermer-compagnon").addEventListener("click", () => ouvrirPanneauCompagnon(false));
+
+// Dessin du compagnon à l'écran : une vraie image (GIF animé), retournée selon son sens de marche
+const imgCompagnon = document.getElementById("compagnon");
+function dessinerCompagnon() {
+  if (!compagnonActif) { imgCompagnon.hidden = true; return; }
+  imgCompagnon.hidden = false;
+  const src = LIGNES_COMPAGNON[compagnonActif].sprites[stadeCompagnon(compagnonActif)];
+  if (imgCompagnon.dataset.src !== src) { imgCompagnon.src = src; imgCompagnon.dataset.src = src; }
+  const cote = HM * taille * 0.72; // sprite carré, un peu plus petit que le mineur
+  imgCompagnon.style.width = cote + "px";
+  imgCompagnon.style.height = cote + "px";
+  const sx = versEcranX(compagnon.x) - cote / 2, sy = versEcranY(compagnon.y) - cote;
+  imgCompagnon.style.transform = "translate(" + sx.toFixed(1) + "px," + sy.toFixed(1) + "px)" + (compagnon.sens > 0 ? " scaleX(-1)" : "");
+}
 
 // Bouton saut (en bas à droite)
 const boutonSaut = document.getElementById("bouton-saut");
@@ -2207,6 +2313,7 @@ function boucle(ms) {
   const dtj = dt * REG.rythme; // temps « du jeu » (réglage rythme général)
   majMatieres(dtj);
   majMineur(dtj);
+  majCompagnon(dtj);
   majGouttes();
   majObjets(dtj);
   majParticules(dtj);
@@ -2224,6 +2331,7 @@ function boucle(ms) {
   majBarreEnergie();
   dessinerMonde(temps, dt);
   dessinerCalque(temps);
+  dessinerCompagnon();
   majCompteur(dt);
 
   // Profondeur : 10 cases = 1 mètre

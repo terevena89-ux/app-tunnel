@@ -1,5 +1,11 @@
 # Tunnel — journal des nouveautés
 
+## 0.10.0 — 2026-11-07
+- **Compagnon (test)** : un petit bouton (en bas à gauche, icône patte) permet de choisir un starter parmi les 3 de la 1re génération (Bulbizarre, Salamèche, Carapuce), ou aucun. Il marche derrière le mineur et augmente la portée de l'aimant qui ramasse les trouvailles (de plus en plus selon son évolution).
+- Il gagne de l'XP à chaque bloc miné et évolue deux fois (paliers raccourcis pour tester vite : 40 puis 120 blocs), avec un petit effet (texte, étincelles, secousse) à chaque évolution.
+- Choix et progression gardés sur ce téléphone (comme le reste de Tunnel).
+- Sprites et noms officiels des 3 starters utilisés tels quels (risque de droits d'auteur assumé pour cet usage personnel) ; seuls les 9 sprites nécessaires sont dans le dépôt, le reste du dossier fourni reste local.
+
 ## 0.9.0 — 2026-11-07
 - « Jus » (effets qui rendent chaque geste satisfaisant), réglable avec le curseur « Intensité des effets » (0 à ×2) : petite secousse quand un bloc casse, éclats qui sautent, chiffres « +N » qui pop au-dessus du mineur en ramassant, ligne du compteur qui grossit un instant, bip de ramassage qui monte d'une note en série. Gros cristal ou fossile : grosse secousse, gerbe d'étincelles, anneau de lumière et « Cristal ! » / « Fossile ! ».
 - Blocs abîmés mais pas cassés : ils se réparent tout seuls (curseurs « attente » 2 s et « durée » 10 s ; 0 = jamais).
