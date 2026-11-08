@@ -44,22 +44,33 @@ html, body {
   display: flex;
   gap: 4px;
 }
+/* Style « pixel sombre » des boutons (v0.11) : coins en escalier, contour d'encre,
+   petit reflet en haut — comme les sprites. --pixel = forme commune des coins. */
+:root {
+  --encre: #1d1726;
+  --bouton: rgba(29, 23, 38, 0.82);
+  --bouton-reflet: #3a3046;
+  --bouton-actif: #3a3046;
+  --bouton-actif-reflet: #5a4c66;
+  --pixel: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+}
 #outils button, #zoom button, #reglages-bas button {
   width: 32px;
   height: 32px;
   padding: 4px;
   border: 0;
-  border-radius: 4px;
-  background: rgba(255, 236, 200, 0.06);
-  color: rgba(255, 231, 194, 0.4);
+  clip-path: var(--pixel);
+  background: var(--bouton);
+  box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--bouton-reflet);
+  color: #a89a86;
   touch-action: manipulation;
   cursor: pointer;
 }
-#outils button.actif, #reglages-bas button.actif {
-  background: rgba(255, 236, 200, 0.2);
+#outils button.actif, #reglages-bas button.actif, #zoom button:active {
+  background: var(--bouton-actif);
+  box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--bouton-actif-reflet);
   color: #ffe7c2;
 }
-#zoom button:active { background: rgba(255, 236, 200, 0.2); color: #ffe7c2; }
 #outils svg, #zoom svg, #reglages-bas svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
 /* Lance-pierre désactivé : ses outils s'effacent */
 #outils.eteint { opacity: 0.35; }
@@ -234,8 +245,9 @@ html, body {
   width: 104px;
   height: 104px;
   border-radius: 50%;
-  background: rgba(255, 236, 200, 0.06);
-  border: 1px solid rgba(255, 236, 200, 0.12);
+  background: rgba(29, 23, 38, 0.55);
+  border: 2px solid var(--encre);
+  box-shadow: inset 0 2px 0 rgba(90, 76, 102, 0.5);
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -243,16 +255,16 @@ html, body {
   align-items: center;
   justify-content: center;
 }
-#joystick.actif { background: rgba(255, 236, 200, 0.1); }
+#joystick.actif { background: rgba(29, 23, 38, 0.75); }
 #joy-bouton {
   width: 44px;
   height: 44px;
-  border-radius: 50%;
-  background: rgba(255, 236, 200, 0.22);
-  border: 1px solid rgba(255, 236, 200, 0.3);
+  clip-path: var(--pixel);
+  background: var(--bouton-actif);
+  box-shadow: inset 0 0 0 2px var(--encre), inset 0 3px 0 2px var(--bouton-actif-reflet);
   pointer-events: none;
 }
-#joystick.actif #joy-bouton { background: rgba(255, 236, 200, 0.4); }
+#joystick.actif #joy-bouton { background: #4a3e56; }
 
 /* Réglages de démo + Compagnon : panneau en bas (le jeu reste visible au-dessus), qui défile */
 #panneau-demo, #panneau-compagnon {
@@ -317,14 +329,15 @@ html, body {
   bottom: calc(56px + env(safe-area-inset-bottom));
   width: 76px;
   height: 76px;
-  padding: 22px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 236, 200, 0.14);
-  background: rgba(255, 236, 200, 0.08);
+  padding: 20px;
+  border: 0;
+  clip-path: var(--pixel);
+  background: var(--bouton-actif);
+  box-shadow: inset 0 0 0 2px var(--encre), inset 0 3px 0 2px var(--bouton-actif-reflet);
   color: #ffe7c2;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
 }
-#bouton-saut.appuye { background: rgba(255, 236, 200, 0.24); }
+#bouton-saut.appuye { background: #4a3e56; box-shadow: inset 0 0 0 2px var(--encre), inset 0 -3px 0 2px var(--bouton-reflet); }
 #bouton-saut svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }

@@ -11,7 +11,7 @@
 //   4. dessine les cases visibles, puis le mineur et la poussière.
 // =========================================================
 
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 
 // ---------- 1. Réglages ----------
 
@@ -664,32 +664,41 @@ function dansPrise(wx, wy) {
 
 // La lampe est sur le casque, côté où il regarde
 const lampeX = () => Math.floor(mineur.x + (mineur.sens > 0 ? 1.6 : 0.4) * E);
-const lampeY = () => Math.floor(mineur.y - 2.7 * E);
+const lampeY = () => Math.floor(mineur.y - 2.5 * E);
 const centreMineurX = () => mineur.x + LM / 2;
 const centreMineurY = () => mineur.y - HM / 2;
 
-// Dessin du mineur (regarde à droite), 8 × 12 petits pixels. Une lettre = une couleur.
-// Les 2 dernières lignes changent pendant la marche (jambes).
+// Dessin du mineur (regarde à droite), 12 × 18 petits pixels (chaque case = 3 × 3 petits pixels,
+// presque la finesse des sprites de créatures). Une lettre = une couleur ; contour sombre franc
+// et ombrage en 2 tons, comme les créatures. Les 2 dernières lignes changent pendant la marche (jambes).
 const SPRITE_HAUT = [
-  ".KKKKKK.",
-  "KYYYYYLK",
-  "KYYYYYYK",
-  "KyyyyyyK",
-  "KSSWESWK",
-  "KSSEESEK",
-  "KsSSSSsK",
-  ".KRBBRK.",
-  ".KBbbBK.",
-  ".KBBBBK."
+  "...KKKKK....",
+  "..KHYYYYKKK.",
+  ".KHYYYYYKLLK",
+  ".KYYYYYYKLLK",
+  "KyyyyyyyyyyK",
+  "KNNSSSSSSSSK",
+  "KNSSSWESWESK",
+  "KsSSSEESEESK",
+  "KsSSSSPSSPSK",
+  ".KKssssssKK.",
+  "..KRRRRRRK..",
+  ".KSBGBBGBSK.",
+  ".KsBBBBBBsK.",
+  "..KBBBBBBK..",
+  "..KbBBBBbK..",
+  "..KbbKKbbK.."
 ];
 const JAMBES = [
-  [".KNKKNK.", "..K..K.."],
-  [".KNKK.K.", "..K.KNK."]
+  ["..KDDKKDDK..", "..KKK..KKK.."],
+  [".KDDK..KDDK.", ".KKK....KKK."]
 ];
 const COUL_SPRITE = {
-  K: "rgba(26,20,32,0.75)", Y: "#e9a72e", y: "#b97d1c", L: "#fff3b8", S: "#e8bf94", s: "#c99a70",
-  E: "#26304f", W: "#faf6ec", R: "#c4533a", B: "#3f6fb0", b: "#2c4f86", N: "#3a2c26"
+  K: "#1d1726", H: "#ffe08a", Y: "#f2b232", y: "#c27f1a", L: "#fff6c8", N: "#6b4630",
+  S: "#f6cfa4", s: "#d6a073", W: "#ffffff", E: "#26304f", P: "#f29a86", R: "#d9563c",
+  B: "#4f86cc", b: "#335f9e", G: "#ffd56a", D: "#5a3d2e"
 };
+const LARG_SPRITE = 12, HAUT_SPRITE = 18;
 
 // ---------- 4. La lumière ----------
 // La lumière part de la lampe et « voyage » de case en case :
@@ -1195,7 +1204,7 @@ const LIGNES_COMPAGNON = {
 };
 const SEUILS_XP_COMPAGNON = [40, 120]; // blocs minés pour évoluer (raccourci de test ; vrais jeux : niveau 16 puis 32-36)
 const BONUS_AIMANT_COMPAGNON = [0, 4, 8]; // cases supplémentaires d'aimant, selon le stade (0, 1 ou 2)
-const DECALAGE_COMPAGNON = 2.4 * E; // à quelle distance derrière le mineur il marche
+const DECALAGE_COMPAGNON = 2.7 * E; // à quelle distance derrière le mineur il marche (sprite plus grand depuis la 0.11)
 
 let compagnonXP = { bulbizarre: 0, salameche: 0, carapuce: 0 };
 let compagnonActif = null; // clé de LIGNES_COMPAGNON, ou null = aucun compagnon
@@ -1312,13 +1321,21 @@ function majObjets(dt) {
 }
 
 // Forme des mini-objets, en petits pixels (1/4 de case) : grains, pépites, éclats...
-const FORME = {
-  grain: [[0, 0], [1, 0], [0, 1], [1, 1]],
-  pepite: [[1, -1], [0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]],
-  eclat: [[0, -1], [0, 0], [0, 1], [0, 2], [1, 1], [1, 2]],
-  os: [[0, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [2, 2]],
-  capsule: [[0, 0], [1, 0], [0, 1], [1, 1], [0, 2], [1, 2]]
+// Formes des mini-objets, en petits pixels de 1/3 de case (comme le mineur). « X » = plein.
+// Chaque forme est transformée en liste de points [x, y], centrée sur l'objet.
+const DESSIN_FORME = {
+  grain: [".XX", "XXX", "XX."],
+  pepite: [".XXX.", "XXXXX", "XXXXX", ".XXX."],
+  eclat: [".X.", "XXX", "XXX", "XXX", ".X."],
+  os: ["X...X", "XXXXX", "X...X"],
+  capsule: [".X.", "XXX", "XXX", "XXX", "XXX", ".X."]
 };
+const FORME = {};
+for (const nom in DESSIN_FORME) {
+  const d = DESSIN_FORME[nom], h = d.length, l = d[0].length, pts = [];
+  d.forEach((ligne, y) => [...ligne].forEach((ch, x) => { if (ch === "X") pts.push([x - (l >> 1), y - (h >> 1)]); }));
+  FORME[nom] = pts;
+}
 function formeDe(t) {
   if (t === CUIVRE || t === OR) return FORME.pepite;
   if (t === CRISTAL) return FORME.eclat;
@@ -1572,13 +1589,13 @@ addEventListener("keyup", e => {
 // ---------- 9. Caméra et zoom ----------
 
 let largVue = 0, hautVue = 0, vueL = 0, vueH = 0, image = null;
-let SUB = 1;    // petits pixels par case dans le dessin du monde (1, 2 ou 4 selon le zoom)
+let SUB = 1;    // petits pixels par case dans le dessin du monde (1, 2 ou 3 selon le zoom ; 3 = même finesse que le mineur)
 let dpr = 1;    // densité de l'écran (le calque est dessiné à la vraie résolution du téléphone)
 
 function redimensionner() {
   largVue = innerWidth / taille; hautVue = innerHeight / taille;
-  // Le grain 4 × 4 des blocs n'est dessiné que quand il se voit (pour rester rapide)
-  const sub = taille >= 6 ? 4 : taille >= 3 ? 2 : 1; // (petits pixels par case : seulement ce qui se voit, pour rester rapide)
+  // Le grain 3 × 3 des blocs n'est dessiné que quand il se voit (pour rester rapide)
+  const sub = taille >= 6 ? 3 : taille >= 3 ? 2 : 1; // (petits pixels par case : seulement ce qui se voit, pour rester rapide)
   // Une case de plus de chaque côté pour pouvoir glisser en douceur entre deux cases
   const l = Math.ceil(largVue) + 1, h = Math.ceil(hautVue) + 1;
   if (l !== vueL || h !== vueH || sub !== SUB || !image) {
@@ -1710,14 +1727,16 @@ function dessinerMonde(temps, dt) {
         }
       } else {
         const P = t === SOCLE ? COUL_SOCLE : (COUL[t] || COUL_ROCHE[t] || COUL_COUCHE[couche[i]]);
-        const n = 0.9 + 0.2 * B1[(x & 127) | ((y & 127) << 7)];
+        // Teinte de la case : 3 tons seulement (palette limitée, façon pixel art), surtout le ton moyen
+        const h1 = B1[(x & 127) | ((y & 127) << 7)];
+        const n = h1 < 0.22 ? 0.84 : h1 > 0.86 ? 1.14 : 1;
         r = P[0] * n; g = P[1] * n; b = P[2] * n;
         const u = usure[i];
         // Case entamée (points de vie en baisse) : un peu plus claire, et fissurée par étapes
         if (u > 0) { const f = Math.min(1, u / pvMax(t)), k = 1 + 0.15 * f; r *= k; g *= k; b *= k; etapeFissure = 1 + Math.min(4, Math.floor(f * 5)); } // 5 étapes visibles avant de casser
         if (COUL[t] && l > 0.3 && hache(x + scintille * 7, y + scintille * 13) > 0.975) { r = 255; g = 250; b = 225; }
         hautVide = vid(x, y - 1); basVide = vid(x, y + 1); gVide = vid(x - 1, y); dVide = vid(x + 1, y);
-        if (SUB === 1 && (hautVide || basVide || gVide || dVide)) { r *= 0.75; g *= 0.75; b *= 0.75; }
+        if (SUB === 1 && (hautVide || basVide || gVide || dVide)) { r *= 0.6; g *= 0.6; b *= 0.6; }
       }
       r *= l * T0; g *= l * T1; b *= l * T2;
       if (SUB === 1) { // de loin : un seul pixel par case
@@ -1742,16 +1761,17 @@ function dessinerMonde(temps, dt) {
           } else if (vide) m = 0.85 + 0.3 * B0[((sx >> 2) & 127) | syp];
           else {
             const o = (sx & 127) | sy7;
-            m = 0.9 + 0.14 * B1[o];
+            m = 0.96 + 0.06 * B1[o]; // grain très léger : la case reste d'un ton net
             if (t === SABLE) m *= B2[o] < 0.5 ? 1.25 : 0.78; // grain moucheté
             if (etapeFissure) { // fissures qui s'élargissent, puis éclats qui se détachent (dernière étape)
               if (B3[o] < etapeFissure * 0.08) m *= 0.45;
               else if (etapeFissure === 5 && B4[o] < 0.22) m *= 0.18;
             }
-            if (hautVide && j === 0) m *= 1.12;            // arête claire au-dessus des galeries
-            else if (basVide && j === SUB - 1) m *= 0.68;  // dessous plus sombre
-            if (gVide && k === 0) m *= 0.75;
-            else if (dVide && k === SUB - 1) m *= 0.75;
+            // « Contour franc » au bord des galeries : liseré sombre d'un petit pixel côté vide,
+            // reflet clair juste dessous quand le vide est au-dessus (le sol), ombre quand il est dessous
+            if ((hautVide && j === 0) || (basVide && j === SUB - 1) || (gVide && k === 0) || (dVide && k === SUB - 1)) m *= 0.14; // (plus sombre que la paroi du fond, pour bien se détacher)
+            else if (SUB >= 3 && hautVide && j === 1) m *= 1.3;
+            else if (SUB >= 3 && basVide && j === SUB - 2) m *= 0.72;
           }
           d[q0 + k] = pack(r * m, g * m, b * m);
         }
@@ -1765,7 +1785,7 @@ function dessinerMonde(temps, dt) {
 }
 
 // Le calque : mineur, mini-objets, poussière, lance-pierre (dessinés nets, en petits pixels de 1/4 de case)
-const CONTOUR = "rgba(26,20,32,0.6)";
+const CONTOUR = "#1d1726"; // contour sombre franc (même encre que le mineur et les créatures)
 function dessinerCalque(temps) {
   cc.setTransform(1, 0, 0, 1, 0, 0);
   cc.clearRect(0, 0, calque.width, calque.height);
@@ -1828,19 +1848,24 @@ function dessinerCalque(temps) {
       dessinerUnCristal(c, versEcranX(o.x) - c.W * p / 2, versEcranY(o.y) - c.H * p / 2, Math.max(0.5, lumiereEn(Math.floor(o.x), Math.floor(o.y))));
       continue;
     }
-    const sx = versEcranX(o.x) - q, sy = versEcranY(o.y) - q;
+    const qo = taille / 3; // petit pixel des objets = celui du mineur
+    const sx = versEcranX(o.x) - qo / 2, sy = versEcranY(o.y) - qo / 2;
     if (sx < -10 || sy < -10 || sx > innerWidth + 10 || sy > innerHeight + 10) continue;
     const f = formeDe(o.t), col = couleurObjet(o.t, o.c);
     const L = Math.max(0.3, lumiereEn(Math.floor(o.x), Math.floor(o.y)));
     if (L < 0.31 && revele[idx(Math.floor(o.x), Math.floor(o.y))] === 0) continue;
     const pris = new Set(f.map(([a, b]) => a + "," + b));
+    const a_ = (a, b) => pris.has(a + "," + b);
+    // Contour sombre franc tout autour (8 directions, pour des coins bien fermés)
     cc.fillStyle = CONTOUR;
-    for (const [a, b] of f) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
-      if (!pris.has((a + dx) + "," + (b + dy))) carre(sx + (a + dx) * q, sy + (b + dy) * q, q);
+    for (const [a, b] of f) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++)
+      if ((dx || dy) && !a_(a + dx, b + dy)) carre(sx + (a + dx) * qo, sy + (b + dy) * qo, qo);
+    // Ombrage en 2 tons, comme les créatures : clair en haut à gauche, sombre en bas à droite
     f.forEach(([a, b], n) => {
-      const k = (n === 0 && COUL[o.t]) ? 1.35 : 1; // petit reflet sur les objets précieux
+      let k = !a_(a, b - 1) || !a_(a - 1, b) ? 1.28 : !a_(a, b + 1) || !a_(a + 1, b) ? 0.74 : 1;
+      if (n === 0 && COUL[o.t]) k = 1.55; // petit reflet sur les objets précieux
       cc.fillStyle = "rgb(" + Math.min(255, col[0] * L * k * TEINTE[0] | 0) + "," + Math.min(255, col[1] * L * k * TEINTE[1] | 0) + "," + Math.min(255, col[2] * L * k * TEINTE[2] | 0) + ")";
-      carre(sx + a * q, sy + b * q, q);
+      carre(sx + a * qo, sy + b * qo, qo);
     });
   }
 
@@ -1894,11 +1919,12 @@ function dessinerCalque(temps) {
   cc.translate(net(piedsX), net(piedsY));
   cc.scale(ex * (m.sens > 0 ? 1 : -1), ey);
   const lignes = SPRITE_HAUT.concat(JAMBES[cadre]);
-  for (let y = 0; y < 12; y++) for (let x = 0; x < 8; x++) {
+  const qm = LM * taille / LARG_SPRITE; // petit pixel du mineur (1/3 de case)
+  for (let y = 0; y < HAUT_SPRITE; y++) for (let x = 0; x < LARG_SPRITE; x++) {
     const ch = lignes[y][x];
     if (ch === ".") continue;
     cc.fillStyle = COUL_SPRITE[ch];
-    cc.fillRect((x - 4) * q, (y - 12) * q, q + 0.02, q + 0.02);
+    cc.fillRect((x - LARG_SPRITE / 2) * qm, (y - HAUT_SPRITE) * qm, qm + 0.02, qm + 0.02);
   }
   cc.restore();
 
@@ -2023,8 +2049,13 @@ const DESSINS_OUTILS = {
   rebond: [[2, 11, 10, 1], [5, 4, 4, 4], [4, 5, 1, 2], [9, 5, 1, 2], [2, 3, 1, 1], [1, 6, 1, 1], [11, 2, 1, 1]],
   perce: [[3, 3, 8, 1], [2, 4, 2, 1], [10, 4, 2, 1], [6, 4, 2, 8]]
 };
-const pixelsSvg = liste => '<svg viewBox="0 0 14 14" aria-hidden="true">' +
+// (style « pixel sombre » : chaque dessin a un contour sombre d'un pixel, comme les sprites)
+const pixelsSvg = liste => '<svg viewBox="-1 -1 16 16" aria-hidden="true">' +
+  liste.map(([x, y, w, h]) => `<rect x="${x - 1}" y="${y - 1}" width="${w + 2}" height="${h + 2}" fill="#1d1726"/>`).join("") +
   liste.map(([x, y, w, h]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="currentColor"/>`).join("") + "</svg>";
+// Boutons de zoom : même style de dessin
+for (const b of document.querySelectorAll("#zoom button"))
+  b.innerHTML = pixelsSvg(b.dataset.zoom === "1" ? [[3, 6, 8, 2], [6, 3, 2, 8]] : [[3, 6, 8, 2]]);
 function majBoutonsOutils() {
   for (const b of document.querySelectorAll("#outils button")) b.classList.toggle("actif", b.dataset.outil === outil);
 }
@@ -2192,10 +2223,13 @@ function dessinerCompagnon() {
   imgCompagnon.hidden = false;
   const src = LIGNES_COMPAGNON[compagnonActif].sprites[stadeCompagnon(compagnonActif)];
   if (imgCompagnon.dataset.src !== src) { imgCompagnon.src = src; imgCompagnon.dataset.src = src; }
-  const cote = HM * taille * 0.72; // sprite carré, un peu plus petit que le mineur
+  // Image de 32 × 32 : un pixel de créature = 1/4 de case (presque la finesse du mineur, 1/3 de case).
+  // Les starters font ainsi environ les 2/3 de la hauteur du mineur.
+  const cote = 32 * taille / 4;
   imgCompagnon.style.width = cote + "px";
   imgCompagnon.style.height = cote + "px";
-  const sx = versEcranX(compagnon.x) - cote / 2, sy = versEcranY(compagnon.y) - cote;
+  // Le bas du dessin est à la 29e ligne de l'image (3 lignes vides dessous) : on le pose sur le sol
+  const sx = versEcranX(compagnon.x) - cote / 2, sy = versEcranY(compagnon.y) - cote * 29 / 32;
   imgCompagnon.style.transform = "translate(" + sx.toFixed(1) + "px," + sy.toFixed(1) + "px)" + (compagnon.sens > 0 ? " scaleX(-1)" : "");
 }
 

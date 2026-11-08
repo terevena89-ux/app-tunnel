@@ -1,5 +1,13 @@
 # Tunnel — journal des nouveautés
 
+## 0.11.0 — 2026-11-07
+- Style graphique harmonisé avec les sprites de créatures :
+  - Mineur redessiné plus finement (12 × 18 pixels au lieu de 8 × 12) : contour sombre franc, ombrage en 2 tons, couleurs plus vives.
+  - Créature compagnon agrandie (environ les 2/3 du mineur) et bien posée sur le sol.
+  - Blocs « contour franc » : liseré sombre au bord des galeries, reflet clair sur le sol, 3 tons par matière, grain 3 × 3 (même finesse que le mineur).
+  - Mini-objets (pépites, éclats, os, capsules, miettes) redessinés à la même finesse, avec contour sombre et ombrage ; contour des gros cristaux et fossiles plus net.
+  - Boutons « pixel sombre » : coins en escalier, contour d'encre, petit reflet ; icônes avec contour.
+
 ## 0.10.0 — 2026-11-07
 - **Compagnon (test)** : un petit bouton (en bas à gauche, icône patte) permet de choisir un starter parmi les 3 de la 1re génération (Bulbizarre, Salamèche, Carapuce), ou aucun. Il marche derrière le mineur et augmente la portée de l'aimant qui ramasse les trouvailles (de plus en plus selon son évolution).
 - Il gagne de l'XP à chaque bloc miné et évolue deux fois (paliers raccourcis pour tester vite : 40 puis 120 blocs), avec un petit effet (texte, étincelles, secousse) à chaque évolution.
