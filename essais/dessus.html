@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#08090c">
+<title>Tunnel — vue de dessus</title>
+<style>
+  /* Essai 2 : vue de dessus + jet d'énergie. Tout est dans ce fichier. */
+  :root {
+    --encre: #1d1726; --bouton: rgba(29, 23, 38, 0.82); --reflet: #3a3046; --actif: #3a3046; --actif-reflet: #5a4c66;
+    --pixel: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; position: fixed; inset: 0; background: #050507; overscroll-behavior: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  #monde { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; will-change: transform; }
+  #compagnon { position: absolute; left: 0; top: 0; pointer-events: none; image-rendering: pixelated; will-change: transform, filter; }
+  #dessus { position: absolute; inset: 0; touch-action: none; }
+  #haut { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 10px; right: 10px; display: flex; gap: 6px; }
+  #haut button, #haut a {
+    height: 32px; padding: 0 10px; border: 0; clip-path: var(--pixel); background: var(--bouton);
+    box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--reflet);
+    color: #ffe7c2; font: bold 12px monospace; display: flex; align-items: center; text-decoration: none; white-space: nowrap;
+  }
+  #haut a { margin-left: auto; color: #a89a86; }
+  #haut b { color: #a89a86; font-weight: normal; margin-right: 6px; }
+  #bandeau {
+    position: absolute; left: 50%; top: calc(52px + env(safe-area-inset-top)); transform: translateX(-50%);
+    padding: 8px 14px; clip-path: var(--pixel); background: #e9a72e; color: var(--encre);
+    box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px #ffd56a; font: bold 12px monospace; white-space: nowrap;
+    pointer-events: none; transition: opacity .4s, transform .4s;
+  }
+  #bandeau.cache { opacity: 0; transform: translate(-50%, -8px); }
+  #joystick {
+    position: absolute; left: 14px; bottom: calc(18px + env(safe-area-inset-bottom)); width: 104px; height: 104px;
+    border-radius: 50%; background: rgba(29, 23, 38, 0.55); border: 2px solid var(--encre); touch-action: none;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #joy { width: 44px; height: 44px; clip-path: var(--pixel); background: var(--actif); box-shadow: inset 0 0 0 2px var(--encre), inset 0 3px 0 2px var(--actif-reflet); pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="monde"></canvas>
+<img id="compagnon" src="../compagnons/004_left.gif" alt="">
+<canvas id="dessus"></canvas>
+<div id="haut">
+  <button id="b-matiere"><b>Matière</b><span>Gommage</span></button>
+  <button id="b-jet"><b>Jet</b><span>Fin</span></button>
+  <a href="../">Jeu</a>
+</div>
+<div id="bandeau" class="cache"></div>
+<div id="joystick"><div id="joy"></div></div>
+
+<script>
+"use strict";
+// =========================================================
+// Tunnel — essai 2 : vue de dessus + jet d'énergie
+// - Le monde est fait de petits pixels (3 par « case » du jeu) : le jet peut les effacer un par un.
+// - Murs en 3/4 (dessus + face avant haute), vieux sol à découvrir dessous.
+// - Mine dans le noir : le mineur a un halo, le jet et les étincelles éclairent.
+// - Bouton « Matière » : 4 façons dont la matière part (à comparer en jouant).
+// - Zones à déterrer (mousse + objets enfouis) avec effet à 100 %.
+// Tout le monde est dessiné dans une petite image (1 pixel = 1 pixel du monde), agrandie ×3 sans flou.
+// =========================================================
+
+const P = 3;                       // taille d'un pixel du monde à l'écran (px)
+const W = 360, H = 420;            // taille du monde (pixels)
+const FH = 6;                      // hauteur de la face avant des murs (pixels)
+const VIDE = 0, CRASSE = 1, TERRE = 2, ROCHE = 3, MOUSSE = 4, OBJET = 5, BORD = 6;
+const COUL = [null, [70, 66, 58], [139, 94, 60], [118, 116, 124], [104, 146, 74], null, [40, 34, 44]];
+const PVMAX = [0, 0.12, 0.35, 1.1, 0.2, 0, 0];
+const cassable = t => t >= CRASSE && t <= MOUSSE;
+
+const hache = (x, y, s = 0) => { let h = x * 374761393 + y * 668265263 + s * 2147483647; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const type = new Uint8Array(W * H), base = new Uint8Array(W * H), couche = new Uint8Array(W * H), pv = new Float32Array(W * H);
+const ton = new Float32Array(W * H), sol = new Uint8Array(W * H * 3), objC = new Uint8Array(W * H * 3);
+const zoneMousse = new Int16Array(W * H), zoneCouv = new Int16Array(W * H);
+const dans = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+const typeEn = (x, y) => dans(x, y) ? type[y * W + x] : BORD;
+const solide = (x, y) => typeEn(x, y) !== VIDE;
+
+// ---------- Les 4 façons dont la matière part ----------
+// grain 1 = pixel par pixel (gommage fin) ; grain 3 = par cases de 3 × 3
+// couches = d'abord la crasse, puis la terre, puis la roche
+const MATIERES = [
+  { nom: "Gommage", grain: 1, couches: false },
+  { nom: "Couches", grain: 3, couches: true },
+  { nom: "Les deux", grain: 1, couches: true },
+  { nom: "Cases", grain: 3, couches: false }
+];
+let matiere = MATIERES[0];
+const pile = b => !matiere.couches || b === MOUSSE ? [b] : b === ROCHE ? [CRASSE, TERRE, ROCHE] : [CRASSE, TERRE];
+// En mode « cases », toute la case partage les points de vie de son coin haut-gauche
+const origine = (x, y) => matiere.grain === 1 ? y * W + x : (y - y % 3) * W + (x - x % 3);
+
+// ---------- Le vieux sol à découvrir (calculé une fois) ----------
+const MOSA = [[176, 92, 64], [212, 176, 96], [72, 120, 140], [226, 214, 190]];
+function couleurSol(x, y) {
+  const r = hache(x >> 6, y >> 6, 7);
+  if (r < 0.3) { // dalles de pierre, en quinconce
+    const tx = (x / 10) | 0, yy = y + (tx & 1) * 5, ty = (yy / 10) | 0;
+    if (x % 10 === 0 || yy % 10 === 0) return [48, 42, 40];
+    const k = (0.85 + 0.3 * hache(tx, ty, 2)) * (hache(x, y, 3) < 0.03 ? 0.7 : 1);
+    return [132 * k, 122 * k, 108 * k];
+  }
+  if (r < 0.5) { // mosaïque en losanges
+    if (x % 3 === 0 || y % 3 === 0) return [60, 52, 48];
+    const cx = (x / 3) | 0, cy = (y / 3) | 0, d = Math.abs((cx % 10) - 4.5) + Math.abs((cy % 10) - 4.5);
+    const c = MOSA[Math.floor(d) % 4], k = 0.9 + 0.15 * hache(cx, cy, 4);
+    return [c[0] * k, c[1] * k, c[2] * k];
+  }
+  if (r < 0.8) { // terre battue traversée de racines
+    const v = Math.sin(x * 0.09 + hache(x >> 6, y >> 6, 8) * 6) * 7 + Math.sin(x * 0.23) * 2;
+    if (Math.abs((y % 36) - 18 - v) < 1) return [134, 98, 58];
+    const k = 0.9 + 0.15 * hache(x >> 1, y >> 1, 5);
+    return [96 * k, 78 * k, 60 * k];
+  }
+  // vieux plancher
+  const rang = (y / 5) | 0, px = x + rang * 7;
+  if (y % 5 === 0 || px % 24 === 0) return [50, 36, 26];
+  if (px % 24 === 2 && y % 5 === 2) return [170, 160, 140];
+  const k = 0.85 + 0.25 * hache(rang, (px / 24) | 0, 6);
+  return [118 * k, 84 * k, 54 * k];
+}
+
+// ---------- Zones à déterrer ----------
+const zones = [];
+const OBJETS = [
+  { nom: "Ammonite", dessin: [".XXX.", "XowXX", "XoXoX", "XXooX", ".XXX."], pal: { X: [234, 223, 196], o: [163, 150, 117], w: [255, 250, 235] } },
+  { nom: "Grand os", dessin: ["Xw.....wX", "XXXXXXXXX", "Xo.....oX"], pal: { X: [234, 223, 196], o: [163, 150, 117], w: [255, 250, 235] } },
+  { nom: "Cristal", dessin: ["..w..", ".wBX.", "XwBXX", "XBBXo", "XBBXo", ".XXo."], pal: { X: [143, 227, 255], B: [75, 176, 230], o: [42, 111, 176], w: [255, 255, 255] } }
+];
+const DEPART = { x: 180, y: 90 };
+
+function generer() {
+  zones.length = 0; zoneMousse.fill(-1); zoneCouv.fill(-1);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (x < 4 || y < 4 || x >= W - 4 || y >= H - 4) { base[i] = BORD; continue; }
+    const r = hache(x >> 4, y >> 4, 1) * 0.7 + hache(x >> 2, y >> 2, 2) * 0.3; // roche en plaques
+    base[i] = r > 0.74 ? ROCHE : TERRE;
+    if (((x - DEPART.x) / 36) ** 2 + ((y - DEPART.y) / 24) ** 2 < 1) base[i] = VIDE;
+    const c = couleurSol(x, y); sol[i * 3] = c[0]; sol[i * 3 + 1] = c[1]; sol[i * 3 + 2] = c[2];
+    const h = hache((x / 3) | 0, (y / 3) | 0, 3);
+    ton[i] = (h < 0.22 ? 0.84 : h > 0.86 ? 1.14 : 1) * (0.96 + 0.08 * hache(x, y, 9));
+  }
+  // Quelques petites poches déjà vides (on y voit le vieux sol)
+  for (let k = 0; k < 10; k++) {
+    const cx = 30 + hache(k, 1, 11) * (W - 60), cy = 140 + hache(k, 2, 11) * (H - 180), rx = 10 + hache(k, 3, 11) * 14, ry = 8 + hache(k, 4, 11) * 10;
+    for (let y = Math.floor(cy - ry); y <= cy + ry; y++) for (let x = Math.floor(cx - rx); x <= cx + rx; x++)
+      if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + (hache(x >> 1, y >> 1, 12) - 0.5) * 0.5 < 1 && base[y * W + x] !== BORD) base[y * W + x] = VIDE;
+  }
+  // Zones : 4 tout près pour tester vite, d'autres plus loin
+  const places = [];
+  const libre = (x, y, r) => Math.hypot(x - DEPART.x, (y - DEPART.y) * 1.4) > 48 + r && places.every(p => Math.hypot(p[0] - x, p[1] - y) > p[2] + r + 10);
+  let n = 0;
+  for (let essai = 0; essai < 4000 && n < 16; essai++) {
+    const proche = n < 4, a = Math.random() * Math.PI * 2, d = proche ? 55 + Math.random() * 25 : 60 + Math.random() * 220;
+    const x = Math.round(DEPART.x + Math.cos(a) * d), y = Math.round(DEPART.y + Math.abs(Math.sin(a)) * d * (proche ? 0.9 : 1.3) + 10);
+    const mousse = n % 2 === 0, r = mousse ? 16 : 18;
+    if (x < 24 || y < 24 || x > W - 25 || y > H - 25 || !libre(x, y, r)) continue;
+    places.push([x, y, r]);
+    if (mousse) creerMousse(x, y); else creerObjet(x, y, OBJETS[(n >> 1) % OBJETS.length]);
+    n++;
+  }
+  // Mise en place des couches et des points de vie
+  for (let i = 0; i < W * H; i++) {
+    couche[i] = 0;
+    type[i] = base[i] === VIDE || base[i] === BORD || base[i] === OBJET ? base[i] : pile(base[i])[0];
+    pv[i] = PVMAX[type[i]];
+  }
+  for (const z of zones) { z.faits = 0; z.total = 0; z.membres = []; }
+  for (let i = 0; i < W * H; i++) {
+    if (zoneMousse[i] >= 0) { zones[zoneMousse[i]].total++; zones[zoneMousse[i]].membres.push(i); }
+    if (zoneCouv[i] >= 0) { zones[zoneCouv[i]].total++; zones[zoneCouv[i]].membres.push(i); }
+  }
+}
+function creerMousse(cx, cy) {
+  const id = zones.length, z = { sorte: "mousse", nom: "Mousse", cx, cy, fait: false, touche: 0, brille: 0, bord: [] };
+  const rx = 9 + Math.random() * 6, ry = 6 + Math.random() * 5;
+  for (let y = cy - 16; y <= cy + 16; y++) for (let x = cx - 18; x <= cx + 18; x++) {
+    const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + (hache(x >> 1, y >> 1, 5) - 0.5) * 0.5;
+    if (d < 1) { base[y * W + x] = MOUSSE; zoneMousse[y * W + x] = id; }
+  }
+  // Contour pointillé : pixels de mousse qui touchent autre chose
+  for (let y = cy - 16; y <= cy + 16; y++) for (let x = cx - 18; x <= cx + 18; x++) {
+    const i = y * W + x;
+    if (zoneMousse[i] === id && (zoneMousse[i - 1] !== id || zoneMousse[i + 1] !== id || zoneMousse[i - W] !== id || zoneMousse[i + W] !== id) && (x + y) % 3 === 0) z.bord.push([x, y]);
+  }
+  zones.push(z);
+}
+function creerObjet(cx, cy, modele) {
+  const id = zones.length, z = { sorte: "objet", nom: modele.nom, cx, cy, fait: false, touche: 0, brille: 0, pixels: [], bord: [] };
+  const d = modele.dessin, ox = cx - Math.floor(d[0].length * 3 / 2), oy = cy - Math.floor(d.length * 3 / 2);
+  d.forEach((ligne, j) => [...ligne].forEach((ch, k) => {
+    if (ch === ".") return;
+    const c = modele.pal[ch];
+    for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+      const i = (oy + j * 3 + b) * W + ox + k * 3 + a;
+      base[i] = OBJET; z.pixels.push(i);
+      const kk = (b === 0 || a === 0) ? 1.08 : (b === 2 || a === 2) ? 0.9 : 1; // petit relief dans chaque « case »
+      objC[i * 3] = Math.min(255, c[0] * kk); objC[i * 3 + 1] = Math.min(255, c[1] * kk); objC[i * 3 + 2] = Math.min(255, c[2] * kk);
+    }
+  }));
+  // Couverture : toute la matière à moins de 3 pixels de l'objet
+  for (const i of z.pixels) for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    const v = i + dy * W + dx;
+    if (base[v] !== OBJET && base[v] !== VIDE && base[v] !== BORD && zoneCouv[v] < 0) zoneCouv[v] = id;
+  }
+  zones.push(z);
+}
+
+// ---------- Le mineur ----------
+const SPRITE = ["...KKKKK....", "..KHYYYYKKK.", ".KHYYYYYKLLK", ".KYYYYYYKLLK", "KyyyyyyyyyyK", "KNNSSSSSSSSK", "KNSSSWESWESK", "KsSSSEESEESK", "KsSSSSPSSPSK", ".KKssssssKK.", "..KRRRRRRK..", ".KSBGBBGBSK.", ".KsBBBBBBsK.", "..KBBBBBBK..", "..KbBBBBbK..", "..KbbKKbbK.."];
+const JAMBES = [["..KDDKKDDK..", "..KKK..KKK.."], [".KDDK..KDDK.", ".KKK....KKK."]];
+const PAL = { K: [29, 23, 38], H: [255, 224, 138], Y: [242, 178, 50], y: [194, 127, 26], L: [255, 246, 200], N: [107, 70, 48], S: [246, 207, 164], s: [214, 160, 115], W: [255, 255, 255], E: [38, 48, 79], P: [242, 154, 134], R: [217, 86, 60], B: [79, 134, 204], b: [51, 95, 158], G: [255, 213, 106], D: [90, 61, 46] };
+const m = { x: DEPART.x, y: DEPART.y + 10, vx: 0, vy: 0, sens: 1, pas: 0 };
+// Boîte de collision : seulement les pieds (vue de dessus)
+function touche(x, y) {
+  for (let cy = Math.floor(y - 3); cy <= Math.floor(y - 0.01); cy++)
+    for (let cx = Math.floor(x - 4); cx <= Math.floor(x + 3.99); cx++) if (solide(cx, cy)) return true;
+  return false;
+}
+function bouger(dx, dy) {
+  const n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 0.5) || 1;
+  for (let k = 0; k < n; k++) {
+    if (dx) { m.x += dx / n; if (touche(m.x, m.y)) { m.x -= dx / n; dx = 0; } }
+    if (dy) { m.y += dy / n; if (touche(m.x, m.y)) { m.y -= dy / n; dy = 0; } }
+  }
+}
+const buseX = () => m.x + m.sens * 4, buseY = () => m.y - 8;
+
+// ---------- Effets (déclarés tôt : le minage s'en sert) ----------
+const particules = [], anneaux = [], textes = [];
+let secousse = 0, tremble = 0;
+function particule(x, y, vx, vy, c, vie, brille) { if (particules.length < 700) particules.push({ x, y, vx, vy, c, vie, vie0: vie, brille }); }
+
+// ---------- Creuser ----------
+let jet = "fin", doigt = null, tir = null; // tir = { traits: [[x1,y1,x2,y2,coeur]], impact: [x,y], mat }
+function abimer(x, y, q, vues) {
+  if (!dans(x, y)) return;
+  let o = origine(x, y);
+  if (!cassable(type[o])) o = y * W + x; // (coin de la case déjà vide : on s'occupe du pixel lui-même)
+  if (!cassable(type[o])) return;
+  if (vues) { if (vues.has(o)) return; vues.add(o); } // (mode cases : une seule fois par image)
+  pv[o] -= q;
+  const zm = zoneMousse[o] >= 0 ? zoneMousse[o] : zoneCouv[o];
+  if (zm >= 0) zones[zm].touche = 2.5;
+  if (pv[o] <= 0) avancer(o);
+}
+// La matière a « cédé » : couche suivante, ou elle éclate
+let dernierTic = 0, eclatsImage = 0;
+function avancer(o) {
+  const ox = o % W, oy = (o / W) | 0, g = matiere.grain;
+  let casse = false;
+  for (let b = 0; b < g; b++) for (let a = 0; a < g; a++) {
+    const x = ox + a, y = oy + b, i = y * W + x;
+    if (!dans(x, y) || !cassable(type[i])) continue;
+    const pl = pile(base[i]);
+    if (couche[i] + 1 < pl.length) { couche[i]++; type[i] = pl[couche[i]]; pv[i] = PVMAX[type[i]]; continue; }
+    const c = COUL[type[i]];
+    type[i] = VIDE; casse = true;
+    if (zoneMousse[i] >= 0) compter(zoneMousse[i]);
+    if (zoneCouv[i] >= 0) compter(zoneCouv[i]);
+    // Éclats : un peu de matière + étincelles qui brillent
+    if (eclatsImage < 40 && Math.random() < (g === 3 ? 0.6 : 0.35)) {
+      eclatsImage++;
+      const a = Math.random() * Math.PI * 2, v = 20 + Math.random() * 50;
+      particule(x + 0.5, y + 0.5, Math.cos(a) * v, Math.sin(a) * v, c, 0.4 + Math.random() * 0.3, false);
+      if (Math.random() < 0.6) particule(x + 0.5, y + 0.5, Math.cos(a + 1) * v * 1.4, Math.sin(a + 1) * v * 1.4, [255, 200, 90], 0.3 + Math.random() * 0.3, true);
+    }
+  }
+  if (casse && g === 3) secousse = Math.max(secousse, 0.12); // mode cases : petit choc à chaque case
+  if (casse) tic(type[o]);
+}
+// Comme dans Power Wash : à 95 %, la zone est finie et le reste part tout seul
+const SEUIL = 0.95;
+function compter(id) { const z = zones[id]; if (z.fait) return; z.faits++; if (z.faits >= z.total * SEUIL) terminer(z); }
+
+// Rayon depuis la buse : s'arrête sur le premier pixel solide
+function rayon(ox, oy, a, longueur) {
+  const dx = Math.cos(a), dy = Math.sin(a);
+  for (let d = 0; d < longueur; d += 0.5) {
+    const x = ox + dx * d, y = oy + dy * d;
+    if (solide(Math.floor(x), Math.floor(y))) return [x, y, d, typeEn(Math.floor(x), Math.floor(y))];
+  }
+  return [ox + dx * longueur, oy + dy * longueur, longueur, VIDE];
+}
+function pinceau(x, y, r, q, vues) {
+  for (let py = Math.floor(y - r); py <= y + r; py++) for (let px = Math.floor(x - r); px <= x + r; px++) {
+    const d = Math.hypot(px + 0.5 - x, py + 0.5 - y);
+    if (d <= r) abimer(px, py, q * (1 - 0.6 * d / r), vues);
+  }
+}
+function creuser(dt) {
+  tir = null;
+  if (!doigt) return;
+  const wx = camX + doigt.sx / P, wy = camY + doigt.sy / P;
+  const ox = buseX(), oy = buseY(), a = Math.atan2(wy - oy, wx - ox);
+  m.sens = Math.cos(a) >= 0 ? 1 : -1;
+  const vues = matiere.grain === 3 ? new Set() : null;
+  tir = { traits: [], impact: null, mat: VIDE };
+  if (jet === "fin") {
+    for (const dec of [-1, 0, 1]) {
+      const px = ox - Math.sin(a) * dec, py = oy + Math.cos(a) * dec;
+      const [hx, hy, , t] = rayon(px, py, a, 80);
+      if (t !== VIDE) pinceau(hx, hy, 2.6, 5 * dt, vues);
+      tir.traits.push([px, py, hx, hy, dec === 0]);
+      if (dec === 0) { tir.impact = t !== VIDE ? [hx, hy] : null; tir.mat = t; }
+    }
+  } else {
+    let pres = 99;
+    for (let k = -4; k <= 4; k++) {
+      const b = a + k * 0.09, [hx, hy, d, t] = rayon(ox, oy, b, 34);
+      if (t !== VIDE) pinceau(hx, hy, 1.6, 2.2 * dt, vues);
+      tir.traits.push([ox, oy, hx, hy, k === 0]);
+      if (t !== VIDE && d < pres) { pres = d; tir.impact = [hx, hy]; tir.mat = t; }
+    }
+  }
+  // Recul : le dessin du mineur tremble d'1 pixel vers l'arrière (il ne recule pas vraiment)
+  m.recul = Math.random() < 0.5 ? [-Math.round(Math.cos(a)), -Math.round(Math.sin(a))] : [0, 0];
+  // Étincelles à l'impact
+  if (tir.impact && Math.random() < 0.8) {
+    const [ix, iy] = tir.impact, b = a + Math.PI + (Math.random() - 0.5) * 2.2, v = 30 + Math.random() * 60;
+    particule(ix, iy, Math.cos(b) * v, Math.sin(b) * v, [255, 220, 120], 0.25 + Math.random() * 0.25, true);
+  }
+}
+
+// ---------- Fin d'une zone ----------
+function terminer(z) {
+  z.fait = true; z.brille = 1.4;
+  // Le reste de la zone part d'un coup, en étincelles
+  for (const i of z.membres) if (cassable(type[i])) {
+    type[i] = VIDE;
+    if (Math.random() < 0.25) { const a = Math.random() * Math.PI * 2; particule(i % W + 0.5, ((i / W) | 0) + 0.5, Math.cos(a) * 40, Math.sin(a) * 40, [255, 220, 120], 0.5, true); }
+  }
+  z.faits = z.total;
+  anneaux.push({ x: z.cx, y: z.cy, t: 0 });
+  textes.push({ x: z.cx, y: z.cy - 12, txt: "100 %", t: 0 });
+  for (let k = 0; k < 50; k++) {
+    const a = Math.random() * Math.PI * 2, v = 30 + Math.random() * 90;
+    particule(z.cx, z.cy, Math.cos(a) * v, Math.sin(a) * v, k % 3 ? [255, 220, 120] : [255, 255, 255], 0.6 + Math.random() * 0.6, true);
+  }
+  secousse = 0.4; ding(); vibrer([25, 40, 40]);
+  montrerBandeau(z.sorte === "mousse" ? "Mousse nettoyée · " + z.total + " px" : z.nom + (z.nom === "Ammonite" ? " déterrée !" : " déterré !"));
+  if (z.sorte === "objet") setTimeout(() => {
+    for (const i of z.pixels) {
+      type[i] = VIDE;
+      if (Math.random() < 0.3) particule(i % W + 0.5, ((i / W) | 0) + 0.5, (m.x - i % W) * 2, (m.y - 8 - ((i / W) | 0)) * 2, [objC[i * 3], objC[i * 3 + 1], objC[i * 3 + 2]], 0.5, true);
+    }
+  }, 1300);
+}
+
+// ---------- Son et vibration ----------
+let audio = null, son = null;
+function initSon() {
+  if (audio) return;
+  try {
+    audio = new (window.AudioContext || window.webkitAudioContext)();
+    // Bruit filtré (le « pschhh ») + bourdonnement grave (le moteur du jet)
+    const buf = audio.createBuffer(1, audio.sampleRate, audio.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const bruit = audio.createBufferSource(); bruit.buffer = buf; bruit.loop = true;
+    const filtre = audio.createBiquadFilter(); filtre.type = "bandpass"; filtre.Q.value = 1.2; filtre.frequency.value = 1200;
+    const gBruit = audio.createGain(); gBruit.gain.value = 0;
+    const osc = audio.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = 70;
+    const bas = audio.createBiquadFilter(); bas.type = "lowpass"; bas.frequency.value = 400;
+    const gOsc = audio.createGain(); gOsc.gain.value = 0;
+    bruit.connect(filtre); filtre.connect(gBruit); gBruit.connect(audio.destination);
+    osc.connect(bas); bas.connect(gOsc); gOsc.connect(audio.destination);
+    bruit.start(); osc.start();
+    son = { filtre, gBruit, osc, gOsc };
+  } catch (e) { audio = null; }
+}
+// Son selon ce que le jet touche : sourd sur la terre, sec sur la roche, plus aigu sur la mousse
+const SON_MAT = { [VIDE]: [500, 0.03, 60], [CRASSE]: [2600, 0.1, 75], [TERRE]: [900, 0.12, 70], [ROCHE]: [3400, 0.1, 95], [MOUSSE]: [1700, 0.1, 80], [OBJET]: [4200, 0.06, 110], [BORD]: [300, 0.05, 55] };
+function majSon() {
+  if (!son) return;
+  const t = audio.currentTime;
+  if (tir) {
+    const [f, g, o] = SON_MAT[tir.mat] || SON_MAT[VIDE];
+    son.filtre.frequency.setTargetAtTime(f, t, 0.03); son.gBruit.gain.setTargetAtTime(g, t, 0.03);
+    son.osc.frequency.setTargetAtTime(o + Math.random() * 6, t, 0.05); son.gOsc.gain.setTargetAtTime(0.035, t, 0.03);
+  } else { son.gBruit.gain.setTargetAtTime(0, t, 0.05); son.gOsc.gain.setTargetAtTime(0, t, 0.05); }
+}
+function tic(mat) {
+  if (!audio) return;
+  const t = audio.currentTime;
+  if (t - dernierTic < 0.04) return;
+  dernierTic = t;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = "square"; o.frequency.value = (mat === ROCHE ? 1600 : 900) + Math.random() * 500;
+  g.gain.setValueAtTime(0.03, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + 0.05);
+}
+function ding() {
+  if (!audio) return;
+  const t = audio.currentTime;
+  [[988, 0], [1480, 0.09], [1976, 0.18]].forEach(([f, d]) => {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = "triangle"; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.22, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.6);
+    o.connect(g); g.connect(audio.destination); o.start(t + d); o.stop(t + d + 0.65);
+  });
+}
+let vibreTemps = 0;
+function vibrer(motif) { try { if (navigator.vibrate) navigator.vibrate(motif); } catch (e) {} }
+const bandeau = document.getElementById("bandeau");
+let minuteBandeau = 0;
+function montrerBandeau(txt) {
+  bandeau.textContent = txt; bandeau.classList.remove("cache");
+  clearTimeout(minuteBandeau); minuteBandeau = setTimeout(() => bandeau.classList.add("cache"), 2600);
+}
+
+// ---------- Dessin ----------
+const canMonde = document.getElementById("monde"), ctxM = canMonde.getContext("2d");
+const canDessus = document.getElementById("dessus"), cd = canDessus.getContext("2d");
+let largeur = 0, hauteur = 0, dpr = 1, BW = 0, BH = 0, image = null, pix = null, camX = 0, camY = 0;
+function redim() {
+  largeur = innerWidth; hauteur = innerHeight; dpr = Math.min(3, devicePixelRatio || 1);
+  BW = Math.ceil(largeur / P) + 2; BH = Math.ceil(hauteur / P) + 2;
+  canMonde.width = BW; canMonde.height = BH; canMonde.style.width = BW * P + "px"; canMonde.style.height = BH * P + "px";
+  image = ctxM.createImageData(BW, BH); pix = new Uint32Array(image.data.buffer);
+  canDessus.width = Math.round(largeur * dpr); canDessus.height = Math.round(hauteur * dpr);
+  canDessus.style.width = largeur + "px"; canDessus.style.height = hauteur + "px";
+}
+addEventListener("resize", redim); redim();
+const pack = (r, g, b) => (255 << 24) | ((b > 255 ? 255 : b < 0 ? 0 : b | 0) << 16) | ((g > 255 ? 255 : g < 0 ? 0 : g | 0) << 8) | (r > 255 ? 255 : r < 0 ? 0 : r | 0);
+
+// Sources de lumière de cette image : [x, y, rayon, intensité, r, g, b]
+let lumieres = [];
+function majLumieres(temps) {
+  lumieres = [[m.x, m.y - 8, 58, 0.95, 1, 0.9, 0.78]]; // halo du mineur
+  if (tir) {
+    const fl = 0.85 + Math.random() * 0.3;
+    lumieres.push([buseX(), buseY(), 22, 0.6 * fl, 1, 0.7, 0.4]);
+    if (tir.impact) lumieres.push([tir.impact[0], tir.impact[1], 46, 1.4 * fl, 1, 0.68, 0.32]);
+    const t = tir.traits[(tir.traits.length / 2) | 0];
+    for (const f of [0.35, 0.7]) lumieres.push([t[0] + (t[2] - t[0]) * f, t[1] + (t[3] - t[1]) * f, 22, 0.5 * fl, 1, 0.72, 0.4]);
+  }
+  let n = 0;
+  for (const p of particules) if (p.brille && n < 10 && p.vie > 0.15) { lumieres.push([p.x, p.y, 9, 0.5 * p.vie / p.vie0, 1, 0.75, 0.4]); n++; }
+  for (const z of zones) if (z.brille > 0) lumieres.push([z.cx, z.cy, 70, z.brille, 1, 0.95, 0.75]);
+}
+
+function dessinerMonde(temps) {
+  const ox = Math.floor(camX), oy = Math.floor(camY), AMB = 0.05;
+  const Ls = lumieres, nL = Ls.length;
+  for (let by = 0; by < BH; by++) {
+    const y = oy + by;
+    for (let bx = 0; bx < BW; bx++) {
+      const x = ox + bx;
+      let r, g, b, em = 0, er = 0, eg = 0, eb = 0;
+      if (!dans(x, y)) { pix[by * BW + bx] = pack(5, 5, 7); continue; }
+      const i = y * W + x, t = type[i];
+      if (t !== VIDE) {
+        // Dessus du mur (ou objet enfoui)
+        let k = ton[i];
+        if (t === OBJET) {
+          const z = zones[zoneOf(i)], f = z ? (z.fait ? 1.15 : 0.3 + 0.7 * z.faits / z.total) : 1;
+          r = objC[i * 3] * f; g = objC[i * 3 + 1] * f; b = objC[i * 3 + 2] * f;
+        } else { const c = COUL[t]; r = c[0] * k; g = c[1] * k; b = c[2] * k; }
+        // Fissures lumineuses sur la matière abîmée
+        if (cassable(t)) {
+          const o = origine(x, y), fr = 1 - pv[o] / PVMAX[type[o]];
+          if (fr > 0.05 && hache(x, y, 21) < fr * 0.8) { em = 0.6 + fr * 0.6; er = 255; eg = 150 + fr * 80; eb = 60; }
+        }
+        // Contour franc : bord nord/ouest/est sombre, petite lèvre claire au sud (au-dessus de la face)
+        if (!solide(x, y + 1)) { r *= 1.25; g *= 1.25; b *= 1.25; }
+        else if (!solide(x, y - 1) || !solide(x - 1, y) || !solide(x + 1, y)) { r = 29; g = 23; b = 38; }
+      } else {
+        // Face avant d'un mur au-dessus ?
+        let kf = 0;
+        for (let k = 1; k <= FH; k++) if (solide(x, y - k)) { kf = k; break; }
+        if (kf) {
+          const j = (y - kf) * W + x, tt = typeEn(x, y - kf);
+          let c = tt === OBJET ? [objC[j * 3], objC[j * 3 + 1], objC[j * 3 + 2]] : (COUL[tt] || COUL[BORD]);
+          const f = kf === FH ? 0.32 : (0.7 - 0.05 * kf) * (dans(x, y - kf) ? ton[j] : 1);
+          r = c[0] * f; g = c[1] * f; b = c[2] * f;
+          if (kf < FH && (!solide(x - 1, y - kf) || !solide(x + 1, y - kf))) { r *= 0.6; g *= 0.6; b *= 0.6; } // arêtes de la face
+        } else {
+          // Vieux sol, assombri près des murs (ombre douce)
+          r = sol[i * 3]; g = sol[i * 3 + 1]; b = sol[i * 3 + 2];
+          if (solide(x - 1, y) || solide(x + 1, y) || solide(x, y + 1)) { r *= 0.6; g *= 0.6; b *= 0.6; }
+          else if (solide(x - 2, y) || solide(x + 2, y) || solide(x, y + 2)) { r *= 0.8; g *= 0.8; b *= 0.8; }
+        }
+      }
+      // Lumière
+      let lr = AMB, lg = AMB, lb = AMB * 1.3;
+      for (let n = 0; n < nL; n++) {
+        const L = Ls[n], dx = x - L[0], dy = y - L[1], d2 = dx * dx + dy * dy, r2 = L[2] * L[2];
+        if (d2 < r2) { const f = 1 - d2 / r2, q = f * f * L[3]; lr += q * L[4]; lg += q * L[5]; lb += q * L[6]; }
+      }
+      r = r * lr + em * er * 0.7; g = g * lg + em * eg * 0.7; b = b * lb + em * eb * 0.7;
+      pix[by * BW + bx] = pack(r, g, b);
+    }
+  }
+  // Mineur (directement dans l'image : mêmes pixels que le monde)
+  const cadre = Math.hypot(m.vx, m.vy) > 3 ? Math.floor(m.pas * 8) % 2 : 0, lignes = SPRITE.concat(JAMBES[cadre]);
+  const rc = tir && m.recul ? m.recul : [0, 0];
+  const mx = Math.round(m.x) - 6 - ox + rc[0], my = Math.round(m.y) - 18 - oy - (cadre ? 1 : 0) + rc[1];
+  for (let y = 0; y < 18; y++) for (let x = 0; x < 12; x++) {
+    const ch = lignes[y][m.sens > 0 ? x : 11 - x];
+    if (ch === ".") continue;
+    const px = mx + x, py = my + y;
+    if (px < 0 || py < 0 || px >= BW || py >= BH) continue;
+    const c = PAL[ch]; pix[py * BW + px] = pack(c[0] * 0.95, c[1] * 0.95, c[2] * 0.95);
+  }
+  // Jet d'énergie : cœur blanc-jaune, halo orange, « pulsations » qui avancent
+  if (tir) for (const [ax, ay, bx2, by2, coeur] of tir.traits) {
+    const lg2 = Math.hypot(bx2 - ax, by2 - ay), n = Math.ceil(lg2 * 2), nx = -(by2 - ay) / (lg2 || 1), ny = (bx2 - ax) / (lg2 || 1);
+    for (let k = 0; k <= n; k++) {
+      const f = k / n, px = ax + (bx2 - ax) * f, py = ay + (by2 - ay) * f, d = f * lg2;
+      const pulse = ((d - temps * 160) % 12 + 12) % 12 < 3;
+      if (coeur) {
+        plot(px, py, pulse ? [255, 255, 255] : [255, 244, 200]);
+        if (Math.random() < 0.9) plotAdd(px + nx, py + ny, [255, 140, 50], 0.55);
+        if (Math.random() < 0.9) plotAdd(px - nx, py - ny, [255, 140, 50], 0.55);
+      } else if (Math.random() < 0.7) plotAdd(px, py, [255, 150, 60], jet === "fin" ? 0.5 : 0.35);
+    }
+    if (coeur && tir.impact) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const d = Math.hypot(dx, dy); if (d <= 2.2) plotAdd(tir.impact[0] + dx, tir.impact[1] + dy, [255, 230, 160], 1 - d / 2.6);
+    }
+  }
+  // Particules : étincelles qui brillent, miettes éclairées
+  for (const p of particules) {
+    const f = p.vie / p.vie0;
+    if (p.brille) plot(p.x, p.y, [p.c[0], p.c[1] * (0.5 + f * 0.5), p.c[2] * f]);
+    else plot(p.x, p.y, [p.c[0] * 0.8, p.c[1] * 0.8, p.c[2] * 0.8]);
+  }
+  ctxM.putImageData(image, 0, 0);
+  function plot(x, y, c) { const px = Math.floor(x) - ox, py = Math.floor(y) - oy; if (px >= 0 && py >= 0 && px < BW && py < BH) pix[py * BW + px] = pack(c[0], c[1], c[2]); }
+  function plotAdd(x, y, c, a) {
+    const px = Math.floor(x) - ox, py = Math.floor(y) - oy;
+    if (px < 0 || py < 0 || px >= BW || py >= BH) return;
+    const v = pix[py * BW + px], r0 = v & 255, g0 = (v >> 8) & 255, b0 = (v >> 16) & 255;
+    pix[py * BW + px] = pack(r0 + c[0] * a, g0 + c[1] * a, b0 + c[2] * a);
+  }
+}
+const zonePixel = new Map(); // (pour retrouver la zone d'un pixel d'objet)
+function zoneOf(i) { return zonePixel.get(i) ?? -1; }
+
+// Calque du dessus (pleine résolution) : pointillés des zones, %, onde, « 100 % »
+function dessinerDessus() {
+  cd.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cd.clearRect(0, 0, largeur, hauteur);
+  const E = x => (x - camX) * P + sx, F = y => (y - camY) * P + sy;
+  for (const z of zones) {
+    if (z.cx < camX - 40 || z.cx > camX + largeur / P + 40 || z.cy < camY - 40 || z.cy > camY + hauteur / P + 40) continue;
+    if (!z.fait) {
+      cd.fillStyle = "rgba(255,236,200,0.4)";
+      for (const [x, y] of z.bord) if (solide(x, y)) cd.fillRect(E(x), F(y), P - 1, P - 1);
+    }
+    if (z.brille > 0) {
+      cd.fillStyle = "rgba(255,255,235," + Math.min(1, z.brille) + ")";
+      for (let k = 0; k < 30; k++) { const a = Math.random() * Math.PI * 2, d = Math.random() * 22; cd.fillRect(E(z.cx + Math.cos(a) * d), F(z.cy + Math.sin(a) * d * 0.7), P, P); }
+    }
+    if (!z.fait && z.faits > 0 && z.touche > 0) {
+      const p = Math.floor(z.faits / z.total * 100) + " %";
+      cd.font = "bold 12px monospace"; cd.textAlign = "center";
+      cd.lineWidth = 3; cd.strokeStyle = "#1d1726"; cd.strokeText(p, E(z.cx), F(z.cy) - 40);
+      cd.fillStyle = "#ffe7c2"; cd.fillText(p, E(z.cx), F(z.cy) - 40);
+    }
+  }
+  for (const o of anneaux) {
+    const r = o.t * 110 * P, al = 1 - o.t / 0.8;
+    cd.strokeStyle = "rgba(255,240,200," + al + ")"; cd.lineWidth = 5 * al + 1;
+    cd.beginPath(); cd.arc(E(o.x), F(o.y), r, 0, Math.PI * 2); cd.stroke();
+  }
+  for (const t of textes) {
+    const k = t.t < 0.2 ? 0.6 + t.t * 4 : 1.4 - Math.min(0.4, t.t - 0.2), al = t.t < 1 ? 1 : 1 - (t.t - 1) * 2;
+    cd.save(); cd.globalAlpha = Math.max(0, al); cd.translate(E(t.x), F(t.y) - t.t * 20); cd.scale(k, k);
+    cd.font = "bold 22px monospace"; cd.textAlign = "center"; cd.lineWidth = 5; cd.strokeStyle = "#1d1726"; cd.strokeText(t.txt, 0, 0);
+    cd.fillStyle = "#ffd56a"; cd.fillText(t.txt, 0, 0); cd.restore();
+  }
+}
+
+// Compagnon : GIF qui suit derrière, assombri selon la lumière
+const img = document.getElementById("compagnon"), comp = { x: m.x - 18, y: m.y, sens: 1 };
+let dirX = 1, dirY = 0, sx = 0, sy = 0;
+function majCompagnon(dt) {
+  const v = Math.hypot(m.vx, m.vy);
+  if (v > 3) { dirX = m.vx / v; dirY = m.vy / v; }
+  const tx = m.x - dirX * 16, ty = m.y - dirY * 12, k = Math.min(1, dt * 5), avant = comp.x;
+  comp.x += (tx - comp.x) * k; comp.y += (ty - comp.y) * k;
+  if (Math.abs(comp.x - avant) > 0.05) comp.sens = comp.x > avant ? 1 : -1;
+  const cote = 64;
+  img.style.width = img.style.height = cote + "px";
+  img.style.transform = "translate(" + ((comp.x - camX) * P - cote / 2 + sx) + "px," + ((comp.y - camY) * P - cote * 29 / 32 + sy) + "px)" + (comp.sens > 0 ? " scaleX(-1)" : "");
+  // Lumière à sa place (même calcul que pour le monde)
+  let l = 0.05;
+  for (const L of lumieres) { const d2 = (comp.x - L[0]) ** 2 + (comp.y - 6 - L[1]) ** 2, r2 = L[2] * L[2]; if (d2 < r2) l += (1 - d2 / r2) ** 2 * L[3]; }
+  img.style.filter = "brightness(" + Math.min(1.2, l).toFixed(2) + ")";
+  img.style.zIndex = comp.y > m.y ? 1 : 0; // devant ou derrière le mineur (vue de dessus) — le mineur est dans le canvas
+}
+
+// ---------- Commandes ----------
+const joy = { x: 0, y: 0, id: null };
+const joystick = document.getElementById("joystick"), joyB = document.getElementById("joy");
+function lireJoy(e) {
+  const r = joystick.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  const d = Math.hypot(dx, dy), k = Math.min(1, 34 / (d || 1));
+  joyB.style.transform = "translate(" + dx * k + "px," + dy * k + "px)";
+  joy.x = Math.max(-1, Math.min(1, dx / 34)); joy.y = Math.max(-1, Math.min(1, dy / 34));
+  if (Math.hypot(joy.x, joy.y) < 0.2) joy.x = joy.y = 0;
+}
+joystick.addEventListener("pointerdown", e => { e.preventDefault(); initSon(); joy.id = e.pointerId; joystick.setPointerCapture(e.pointerId); lireJoy(e); });
+joystick.addEventListener("pointermove", e => { if (e.pointerId === joy.id) lireJoy(e); });
+for (const ev of ["pointerup", "pointercancel"]) joystick.addEventListener(ev, e => { if (e.pointerId !== joy.id) return; joy.id = null; joy.x = joy.y = 0; joyB.style.transform = ""; });
+const touches = new Set();
+addEventListener("keydown", e => touches.add(e.key.toLowerCase()));
+addEventListener("keyup", e => touches.delete(e.key.toLowerCase()));
+canDessus.addEventListener("pointerdown", e => { initSon(); doigt = { id: e.pointerId, sx: e.clientX, sy: e.clientY }; canDessus.setPointerCapture(e.pointerId); });
+canDessus.addEventListener("pointermove", e => { if (doigt && e.pointerId === doigt.id) { doigt.sx = e.clientX; doigt.sy = e.clientY; } });
+for (const ev of ["pointerup", "pointercancel"]) canDessus.addEventListener(ev, e => { if (doigt && e.pointerId === doigt.id) doigt = null; });
+
+const bMat = document.getElementById("b-matiere"), bJet = document.getElementById("b-jet");
+bMat.addEventListener("click", () => {
+  matiere = MATIERES[(MATIERES.indexOf(matiere) + 1) % MATIERES.length];
+  bMat.querySelector("span").textContent = matiere.nom;
+  nouvelleMine();
+});
+bJet.addEventListener("click", () => { jet = jet === "fin" ? "large" : "fin"; bJet.querySelector("span").textContent = jet === "fin" ? "Fin" : "Large"; });
+
+function nouvelleMine() {
+  generer();
+  zonePixel.clear();
+  zones.forEach((z, id) => { if (z.pixels) for (const i of z.pixels) zonePixel.set(i, id); });
+  particules.length = anneaux.length = textes.length = 0;
+  m.x = DEPART.x; m.y = DEPART.y + 10; comp.x = m.x - 18; comp.y = m.y;
+  camX = m.x - largeur / P / 2; camY = m.y - 8 - hauteur / P / 2;
+}
+
+// ---------- Boucle ----------
+let avant = performance.now();
+function etape(dt, temps) {
+  if (joy.id === null) {
+    joy.x = (touches.has("arrowright") || touches.has("d") ? 1 : 0) - (touches.has("arrowleft") || touches.has("q") ? 1 : 0);
+    joy.y = (touches.has("arrowdown") || touches.has("s") ? 1 : 0) - (touches.has("arrowup") || touches.has("z") ? 1 : 0);
+  }
+  m.vx = joy.x * 42; m.vy = joy.y * 42;
+  bouger(m.vx * dt, m.vy * dt);
+  if (Math.abs(joy.x) > 0.15 && !doigt) m.sens = joy.x > 0 ? 1 : -1;
+  if (Math.hypot(m.vx, m.vy) > 3) m.pas += dt; else m.pas = 0;
+  eclatsImage = 0;
+  creuser(dt);
+  majSon();
+  // Vibration légère continue pendant le tir (plus forte sur la roche)
+  if (tir) { vibreTemps -= dt; if (vibreTemps <= 0) { vibreTemps = 0.11; vibrer(tir.mat === ROCHE ? 22 : tir.mat === VIDE ? 0 : 12); } tremble = 1; } else tremble = 0;
+  const cx = m.x - largeur / P / 2, cy = m.y - 8 - hauteur / P / 2;
+  camX += (cx - camX) * Math.min(1, dt * 6); camY += (cy - camY) * Math.min(1, dt * 6);
+  camY = Math.max(-2, camY); // pas de grande bande noire au-dessus du monde
+  for (const p of particules) {
+    p.vie -= dt;
+    const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
+    // Rebond sur les murs
+    if (solide(Math.floor(nx), Math.floor(p.y))) p.vx *= -0.5; else p.x = nx;
+    if (solide(Math.floor(p.x), Math.floor(ny))) p.vy *= -0.5; else p.y = ny;
+    p.vx *= 1 - dt * 2.5; p.vy *= 1 - dt * 2.5;
+  }
+  for (let k = particules.length - 1; k >= 0; k--) if (particules[k].vie <= 0) particules.splice(k, 1);
+  for (const o of anneaux) o.t += dt;
+  while (anneaux.length && anneaux[0].t > 0.8) anneaux.shift();
+  for (const t of textes) t.t += dt;
+  while (textes.length && textes[0].t > 1.5) textes.shift();
+  for (const z of zones) { z.touche -= dt; z.brille = Math.max(0, z.brille - dt); }
+  secousse = Math.max(0, secousse - dt);
+  // Secousse : forte et courte (fin de zone, cases), ou légère et continue (pendant le tir)
+  const amp = secousse * 10 + tremble * 1.2;
+  sx = amp ? (Math.random() - 0.5) * amp : 0; sy = amp ? (Math.random() - 0.5) * amp : 0;
+  majLumieres(temps);
+  dessinerMonde(temps);
+  const fx = (camX - Math.floor(camX)) * P, fy = (camY - Math.floor(camY)) * P;
+  canMonde.style.transform = "translate(" + (-fx + sx).toFixed(2) + "px," + (-fy + sy).toFixed(2) + "px)";
+  majCompagnon(dt);
+  dessinerDessus();
+}
+function boucle(maintenant) {
+  const dt = Math.min(0.05, (maintenant - avant) / 1000); avant = maintenant;
+  etape(dt, maintenant / 1000);
+  requestAnimationFrame(boucle);
+}
+nouvelleMine();
+requestAnimationFrame(boucle);
+</script>
+</body>
+</html>
