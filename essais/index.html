@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#08090c">
+<title>Tunnel — essais</title>
+<style>
+  /* Maquette d'essai : jet / vue de dessus / zones à déterrer. Tout est dans ce fichier. */
+  :root {
+    --encre: #1d1726; --bouton: rgba(29, 23, 38, 0.82); --reflet: #3a3046; --actif: #3a3046; --actif-reflet: #5a4c66;
+    --pixel: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; position: fixed; inset: 0; background: #08090c; overscroll-behavior: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  #jeu { position: absolute; inset: 0; touch-action: none; }
+  #compagnon { position: absolute; left: 0; top: 0; pointer-events: none; image-rendering: pixelated; }
+  /* Boutons du haut : vue, outil, retour au jeu */
+  #haut { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 10px; right: 10px; display: flex; gap: 6px; }
+  #haut button, #haut a {
+    height: 32px; padding: 0 10px; border: 0; clip-path: var(--pixel); background: var(--bouton);
+    box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--reflet);
+    color: #ffe7c2; font: bold 12px monospace; display: flex; align-items: center; text-decoration: none; white-space: nowrap;
+  }
+  #haut a { margin-left: auto; color: #a89a86; }
+  #haut b { color: #a89a86; font-weight: normal; margin-right: 6px; }
+  /* Bandeau de bilan quand une zone est finie */
+  #bandeau {
+    position: absolute; left: 50%; top: calc(52px + env(safe-area-inset-top)); transform: translateX(-50%);
+    padding: 8px 14px; clip-path: var(--pixel); background: #e9a72e; color: var(--encre);
+    box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px #ffd56a; font: bold 12px monospace; white-space: nowrap;
+    pointer-events: none; transition: opacity .4s, transform .4s;
+  }
+  #bandeau.cache { opacity: 0; transform: translate(-50%, -8px); }
+  /* Joystick et saut, comme dans le jeu */
+  #joystick {
+    position: absolute; left: 14px; bottom: calc(18px + env(safe-area-inset-bottom)); width: 104px; height: 104px;
+    border-radius: 50%; background: rgba(29, 23, 38, 0.55); border: 2px solid var(--encre); touch-action: none;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #joy { width: 44px; height: 44px; clip-path: var(--pixel); background: var(--actif); box-shadow: inset 0 0 0 2px var(--encre), inset 0 3px 0 2px var(--actif-reflet); pointer-events: none; }
+  #saut {
+    position: absolute; right: 14px; bottom: calc(24px + env(safe-area-inset-bottom)); width: 76px; height: 76px; padding: 20px;
+    border: 0; clip-path: var(--pixel); background: var(--actif); box-shadow: inset 0 0 0 2px var(--encre), inset 0 3px 0 2px var(--actif-reflet);
+    color: #ffe7c2; touch-action: none;
+  }
+  #saut[hidden] { display: none; }
+  #saut svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
+</style>
+</head>
+<body>
+<canvas id="jeu"></canvas>
+<img id="compagnon" src="../compagnons/004_left.gif" alt="">
+<div id="haut">
+  <button id="b-vue"><b>Vue</b><span>Côté</span></button>
+  <button id="b-outil"><b>Outil</b><span>Gratter</span></button>
+  <a href="../">Jeu</a>
+</div>
+<div id="bandeau" class="cache"></div>
+<div id="joystick"><div id="joy"></div></div>
+<button id="saut" aria-label="Sauter"><svg viewBox="-1 -1 16 16"><rect x="5" y="2" width="4" height="3" fill="#1d1726"/><rect x="2" y="4" width="10" height="4" fill="#1d1726"/><rect x="5" y="6" width="4" height="6" fill="#1d1726"/><rect x="6" y="3" width="2" height="1" fill="currentColor"/><rect x="5" y="4" width="4" height="1" fill="currentColor"/><rect x="4" y="5" width="6" height="1" fill="currentColor"/><rect x="3" y="6" width="8" height="1" fill="currentColor"/><rect x="6" y="7" width="2" height="4" fill="currentColor"/></svg></button>
+
+<script>
+"use strict";
+// =========================================================
+// Tunnel — maquette d'essai (pas le vrai jeu)
+// Trois choses à tester :
+//  1. le pistolet à jet (façon Kärcher) : le minage part du mineur, vers le doigt
+//  2. la vue de dessus (bouton « Vue ») en plus de la vue de côté
+//  3. des zones à déterrer (dalles de mousse + objets enfouis) avec un % et un effet à 100 %
+// Volontairement simple : pas de lumière, pas de sable ni d'eau, pas de sauvegarde.
+// =========================================================
+
+// ---------- Le monde : une grille de cases ----------
+const CASE = 8;                    // taille d'une case à l'écran (px)
+const L = 110, H = 150;            // largeur / hauteur du monde (cases)
+const VIDE = 0, TERRE = 1, ROCHE = 2, DALLE = 3, OBJET = 4, BORD = 5;
+const PV = [0, 1, 3.5, 0.6, 0, 0]; // « points de vie » : temps de minage à vitesse 1 (s)
+const COUL = { 1: [139, 94, 60], 2: [118, 116, 124], 3: [104, 146, 74], 5: [40, 34, 44] };
+const type = new Uint8Array(L * H), pv = new Float32Array(L * H), objCoul = [];
+const idx = (x, y) => y * L + x;
+const dans = (x, y) => x >= 0 && y >= 0 && x < L && y < H;
+const typeEn = (x, y) => dans(x, y) ? type[idx(x, y)] : BORD;
+const solide = (x, y) => typeEn(x, y) !== VIDE;
+const hache = (x, y, s = 0) => { let h = x * 374761393 + y * 668265263 + s * 2147483647; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+
+// Zones à déterrer : { sorte, nom, cases (Set), couverture (Set), total, faites, fait, touche, brille, cx, cy }
+const zones = [];
+const zonesDe = new Map();          // case → liste des zones qui la comptent
+function lierZone(i, z) { if (!zonesDe.has(i)) zonesDe.set(i, []); zonesDe.get(i).push(z); }
+
+// Dessins des objets enfouis (une lettre = une case ; « . » = rien)
+const OBJETS = [
+  { nom: "Ammonite", dessin: [".XXX.", "XowXX", "XoXoX", "XXooX", ".XXX."], pal: { X: [234, 223, 196], o: [163, 150, 117], w: [255, 250, 235] } },
+  { nom: "Grand os", dessin: ["Xw.....wX", "XXXXXXXXX", "Xo.....oX"], pal: { X: [234, 223, 196], o: [163, 150, 117], w: [255, 250, 235] } },
+  { nom: "Cristal", dessin: ["..w..", ".wBX.", "XwBXX", "XBBXo", "XBBXo", ".XXo."], pal: { X: [143, 227, 255], B: [75, 176, 230], o: [42, 111, 176], w: [255, 255, 255] } }
+];
+
+const SALLE = { x: 55, y: 30, rx: 12, ry: 6 }; // salle de départ (vide)
+function generer() {
+  for (let y = 0; y < H; y++) for (let x = 0; x < L; x++) {
+    const i = idx(x, y);
+    if (x < 2 || y < 2 || x >= L - 2 || y >= H - 2) { type[i] = BORD; continue; }
+    const r = hache(x >> 3, y >> 3, 1) * 0.7 + hache(x >> 1, y >> 1, 2) * 0.3; // roche en grosses plaques, plus rares
+    type[i] = r > 0.74 ? ROCHE : TERRE;
+    if (((x - SALLE.x) / SALLE.rx) ** 2 + ((y - SALLE.y) / SALLE.ry) ** 2 < 1) type[i] = VIDE;
+    pv[i] = PV[type[i]];
+  }
+  // Quelques zones tout près pour tester vite, d'autres plus loin
+  const places = [];
+  const libre = (x, y, r) => Math.hypot(x - SALLE.x, (y - SALLE.y) * 1.4) > 16 + r && places.every(p => Math.hypot(p[0] - x, p[1] - y) > p[2] + r + 3);
+  let n = 0;
+  for (let essai = 0; essai < 3000 && n < 16; essai++) {
+    const proche = n < 4; // les 4 premières : à moins de ~25 cases de la salle
+    const a = Math.random() * Math.PI * 2, d = proche ? 18 + Math.random() * 10 : 20 + Math.random() * 70;
+    const x = Math.round(SALLE.x + Math.cos(a) * d), y = Math.round(SALLE.y + Math.abs(Math.sin(a)) * d * (proche ? 0.8 : 1.2) + (proche ? 4 : 0));
+    const dalle = n % 2 === 0, r = dalle ? 4 : 6;
+    if (x < 8 || y < 8 || x > L - 9 || y > H - 9 || !libre(x, y, r)) continue;
+    places.push([x, y, r]);
+    if (dalle) creerDalle(x, y); else creerObjet(x, y, OBJETS[(n >> 1) % OBJETS.length]);
+    n++;
+  }
+}
+function creerDalle(cx, cy) {
+  const z = { sorte: "dalle", nom: "Dalle de mousse", cases: new Set(), couverture: null, faites: 0, fait: false, touche: 0, brille: 0, cx: cx + 0.5, cy: cy + 0.5, bords: [] };
+  const rx = 3 + Math.random() * 2, ry = 2 + Math.random() * 1.5;
+  for (let y = cy - 5; y <= cy + 5; y++) for (let x = cx - 6; x <= cx + 6; x++) {
+    const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + (hache(x, y, 5) - 0.5) * 0.6;
+    if (d < 1) { const i = idx(x, y); type[i] = DALLE; pv[i] = PV[DALLE]; z.cases.add(i); lierZone(i, z); }
+  }
+  // Contour pointillé : côtés des cases de la dalle qui touchent une case hors dalle
+  for (const i of z.cases) {
+    const x = i % L, y = (i / L) | 0;
+    if (!z.cases.has(i - L)) z.bords.push([x, y, x + 1, y]);
+    if (!z.cases.has(i + L)) z.bords.push([x, y + 1, x + 1, y + 1]);
+    if (!z.cases.has(i - 1)) z.bords.push([x, y, x, y + 1]);
+    if (!z.cases.has(i + 1)) z.bords.push([x + 1, y, x + 1, y + 1]);
+  }
+  z.total = z.cases.size; zones.push(z);
+}
+function creerObjet(cx, cy, modele) {
+  const z = { sorte: "objet", nom: modele.nom, cases: new Set(), couverture: new Set(), faites: 0, fait: false, touche: 0, brille: 0, bords: [] };
+  const d = modele.dessin, ox = cx - (d[0].length >> 1), oy = cy - (d.length >> 1);
+  d.forEach((ligne, j) => [...ligne].forEach((ch, k) => {
+    if (ch === ".") return;
+    const i = idx(ox + k, oy + j); type[i] = OBJET; objCoul[i] = modele.pal[ch]; z.cases.add(i);
+  }));
+  // Couverture : toute la roche qui touche l'objet (8 voisins) — il faut la dégager
+  for (const i of z.cases) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const v = i + dy * L + dx;
+    if (!z.cases.has(v) && type[v] !== VIDE && type[v] !== BORD && type[v] !== OBJET && !z.couverture.has(v)) { z.couverture.add(v); lierZone(v, z); }
+  }
+  z.cx = cx + 0.5; z.cy = cy + 0.5; z.total = z.couverture.size; zones.push(z);
+}
+
+// ---------- Le mineur (même dessin que dans le jeu) ----------
+const SPRITE = ["...KKKKK....", "..KHYYYYKKK.", ".KHYYYYYKLLK", ".KYYYYYYKLLK", "KyyyyyyyyyyK", "KNNSSSSSSSSK", "KNSSSWESWESK", "KsSSSEESEESK", "KsSSSSPSSPSK", ".KKssssssKK.", "..KRRRRRRK..", ".KSBGBBGBSK.", ".KsBBBBBBsK.", "..KBBBBBBK..", "..KbBBBBbK..", "..KbbKKbbK.."];
+const JAMBES = [["..KDDKKDDK..", "..KKK..KKK.."], [".KDDK..KDDK.", ".KKK....KKK."]];
+const PAL = { K: "#1d1726", H: "#ffe08a", Y: "#f2b232", y: "#c27f1a", L: "#fff6c8", N: "#6b4630", S: "#f6cfa4", s: "#d6a073", W: "#ffffff", E: "#26304f", P: "#f29a86", R: "#d9563c", B: "#4f86cc", b: "#335f9e", G: "#ffd56a", D: "#5a3d2e" };
+// Position = milieu des pieds (en cases). Vue de côté : boîte haute (tout le corps) ; vue de dessus : seulement les pieds.
+const m = { x: SALLE.x, y: SALLE.y + 3, vx: 0, vy: 0, sol: false, sens: 1, pas: 0 };
+let vue = "cote";   // "cote" ou "dessus"
+const boite = () => vue === "cote" ? { l: 1.1, h: 5.2 } : { l: 1.2, h: 1.4 };
+function touche(x, y) {
+  const b = boite();
+  for (let cy = Math.floor(y - b.h); cy <= Math.floor(y - 0.001); cy++)
+    for (let cx = Math.floor(x - b.l); cx <= Math.floor(x + b.l - 0.001); cx++) if (solide(cx, cy)) return true;
+  return false;
+}
+function bouger(dx, dy) {
+  // Petits pas, pour ne jamais traverser un mur
+  const n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 0.2) || 1;
+  for (let k = 0; k < n; k++) {
+    if (dx) {
+      m.x += dx / n;
+      if (touche(m.x, m.y)) {
+        // Vue de côté : il enjambe les petites marches (1 case)
+        if (vue === "cote" && m.sol && !touche(m.x, m.y - 1.05)) m.y -= 1.05;
+        else { m.x -= dx / n; m.vx = 0; dx = 0; }
+      }
+    }
+    if (dy) {
+      m.y += dy / n;
+      if (touche(m.x, m.y)) { m.y -= dy / n; if (vue === "cote" && dy > 0) m.sol = true; m.vy = 0; dy = 0; }
+    }
+  }
+}
+function majMineur(dt) {
+  if (vue === "cote") {
+    m.vx = joy.x * 14;
+    m.vy = Math.min(40, m.vy + 70 * dt);
+    m.sol = false;
+    bouger(m.vx * dt, 0); bouger(0, m.vy * dt);
+  } else {
+    m.vx = joy.x * 12; m.vy = joy.y * 12;
+    bouger(m.vx * dt, 0); bouger(0, m.vy * dt);
+  }
+  if (Math.abs(joy.x) > 0.15) m.sens = joy.x > 0 ? 1 : -1;
+  if (Math.hypot(m.vx, vue === "cote" ? 0 : m.vy) > 0.5) m.pas += dt; else m.pas = 0;
+}
+function sauter() { if (vue === "cote" && m.sol) { m.vy = -24; m.sol = false; } }
+// D'où part le jet : la main en vue de côté, le milieu du corps vu de dessus
+const buseX = () => m.x + (vue === "cote" ? m.sens * 1.4 : 0);
+const buseY = () => m.y - (vue === "cote" ? 2.6 : 2.2);
+
+// ---------- Creuser ----------
+let outil = "gratter"; // "gratter", "fin", "large"
+const OUTILS = { gratter: "Gratter", fin: "Jet fin", large: "Jet large" };
+let doigt = null;      // doigt posé sur le monde : { id, sx, sy }
+let jets = [];         // traits de jet à dessiner cette image : [x1, y1, x2, y2, épaisseur]
+function abimer(x, y, q) {
+  if (!dans(x, y)) return false;
+  const i = idx(x, y), t = type[i];
+  if (t !== TERRE && t !== ROCHE && t !== DALLE) return false;
+  pv[i] -= q;
+  const zs = zonesDe.get(i); if (zs) for (const z of zs) z.touche = 2.5;
+  if (pv[i] <= 0) casser(x, y);
+  return true;
+}
+function casser(x, y) {
+  const i = idx(x, y), c = COUL[type[i]];
+  type[i] = VIDE;
+  for (let k = 0; k < 2; k++) particule(x + Math.random(), y + Math.random(), (Math.random() - 0.5) * 8, -Math.random() * 6, c, 0.5);
+  const zs = zonesDe.get(i);
+  if (zs) for (const z of zs) { if (z.fait) continue; z.faites++; if (z.faites >= z.total) terminer(z); }
+}
+// Lance un rayon depuis la buse : abîme la première case solide touchée et s'y arrête
+function rayon(ox, oy, a, longueur, force) {
+  const dx = Math.cos(a), dy = Math.sin(a);
+  for (let d = 0; d < longueur; d += 0.3) {
+    const x = ox + dx * d, y = oy + dy * d, cx = Math.floor(x), cy = Math.floor(y);
+    if (solide(cx, cy)) {
+      abimer(cx, cy, force);
+      if (Math.random() < 0.35) particule(x - dx * 0.5, y - dy * 0.5, -dx * 6 + (Math.random() - 0.5) * 8, -dy * 6 + (Math.random() - 0.5) * 8, [170, 215, 255], 0.35); // éclaboussure
+      return d;
+    }
+  }
+  return longueur;
+}
+function creuser(dt) {
+  jets = [];
+  if (!doigt) return;
+  const wx = camX + doigt.sx / CASE, wy = camY + doigt.sy / CASE;
+  if (outil === "gratter") {
+    // Comme dans le jeu : le doigt gratte autour de lui, s'il est assez près du mineur
+    if (Math.hypot(wx - m.x, wy - (m.y - 2.5)) > 16) return;
+    const r = 2.2;
+    for (let y = Math.floor(wy - r); y <= wy + r; y++) for (let x = Math.floor(wx - r); x <= wx + r; x++)
+      if (Math.hypot(x + 0.5 - wx, y + 0.5 - wy) <= r) abimer(x, y, 3 * dt);
+    return;
+  }
+  // Jet : il part de la buse vers le doigt
+  const ox = buseX(), oy = buseY(), a = Math.atan2(wy - oy, wx - ox);
+  if (vue === "cote") m.sens = Math.cos(a) >= 0 ? 1 : -1;
+  if (outil === "fin") {
+    // Jet fin et long : 3 rayons serrés côte à côte (largeur ~1,5 case)
+    for (const dec of [-0.6, 0, 0.6]) {
+      const px = ox - Math.sin(a) * dec, py = oy + Math.cos(a) * dec;
+      const d = rayon(px, py, a, 24, 4.5 * dt);
+      jets.push([px, py, px + Math.cos(a) * d, py + Math.sin(a) * d, dec === 0 ? 2 : 1]);
+    }
+  } else {
+    // Jet large : un éventail court
+    for (let k = -5; k <= 5; k++) {
+      const b = a + k * 0.05;
+      const d = rayon(ox, oy, b, 10, 2.4 * dt);
+      jets.push([ox, oy, ox + Math.cos(b) * d, oy + Math.sin(b) * d, 1]);
+    }
+  }
+}
+
+// ---------- Effets ----------
+const particules = [], anneaux = [], textes = [];
+let secousse = 0;
+function particule(x, y, vx, vy, c, vie) { if (particules.length < 600) particules.push({ x, y, vx, vy, c, vie, vie0: vie }); }
+function terminer(z) {
+  z.fait = true; z.brille = 1.2;
+  anneaux.push({ x: z.cx, y: z.cy, t: 0 });                              // onde de lumière
+  textes.push({ x: z.cx, y: z.cy - 4, txt: "100 %", t: 0 });            // « 100 % » qui grossit
+  for (let k = 0; k < 40; k++) {                                         // gerbe d'étincelles
+    const a = Math.random() * Math.PI * 2, v = 6 + Math.random() * 14;
+    particule(z.cx, z.cy, Math.cos(a) * v, Math.sin(a) * v - 4, k % 3 ? [255, 230, 140] : [255, 255, 255], 0.9);
+  }
+  secousse = 0.35;
+  ding();
+  if (navigator.vibrate) navigator.vibrate([20, 40, 30]);
+  montrerBandeau(z.sorte === "dalle" ? "Dalle nettoyée · " + z.total + " cases" : z.nom + " déterré" + (z.nom === "Ammonite" ? "e" : "") + " !");
+  // L'objet déterré s'envole vers le mineur un peu après
+  if (z.sorte === "objet") setTimeout(() => {
+    for (const i of z.cases) {
+      const x = i % L, y = (i / L) | 0, c = objCoul[i];
+      type[i] = VIDE;
+      particule(x + 0.5, y + 0.5, (m.x - x) * 1.5, (m.y - 3 - y) * 1.5, c, 0.7);
+    }
+  }, 1300);
+}
+let audio = null;
+function ding() {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const t = audio.currentTime;
+    [[988, 0], [1480, 0.09]].forEach(([f, d]) => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = "triangle"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.25, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.5);
+      o.connect(g); g.connect(audio.destination); o.start(t + d); o.stop(t + d + 0.55);
+    });
+  } catch (e) {}
+}
+const bandeau = document.getElementById("bandeau");
+let minuteBandeau = 0;
+function montrerBandeau(txt) {
+  bandeau.textContent = txt; bandeau.classList.remove("cache");
+  clearTimeout(minuteBandeau); minuteBandeau = setTimeout(() => bandeau.classList.add("cache"), 2600);
+}
+
+// ---------- Dessin ----------
+const ecran = document.getElementById("jeu"), cc = ecran.getContext("2d");
+let largeur = 0, hauteur = 0, dpr = 1, camX = 0, camY = 0;
+function redim() {
+  dpr = Math.min(3, devicePixelRatio || 1); largeur = innerWidth; hauteur = innerHeight;
+  ecran.width = Math.round(largeur * dpr); ecran.height = Math.round(hauteur * dpr);
+  ecran.style.width = largeur + "px"; ecran.style.height = hauteur + "px";
+}
+addEventListener("resize", redim); redim();
+const rgb = (c, f) => "rgb(" + Math.min(255, c[0] * f | 0) + "," + Math.min(255, c[1] * f | 0) + "," + Math.min(255, c[2] * f | 0) + ")";
+const ton = (x, y) => { const h = hache(x, y, 3); return h < 0.22 ? 0.84 : h > 0.86 ? 1.14 : 1; };
+const SOL_DESSUS = [92, 76, 62]; // sol des galeries, vu de dessus
+
+function dessiner(temps) {
+  cc.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cc.fillStyle = "#08090c"; cc.fillRect(0, 0, largeur, hauteur);
+  const sx = secousse > 0 ? (Math.random() - 0.5) * 6 * secousse : 0, sy = secousse > 0 ? (Math.random() - 0.5) * 6 * secousse : 0;
+  cc.translate(sx, sy);
+  const E = x => (x - camX) * CASE, F = y => (y - camY) * CASE, a = CASE / 3;
+  const x0 = Math.floor(camX), y0 = Math.floor(camY), x1 = Math.ceil(camX + largeur / CASE), y1 = Math.ceil(camY + hauteur / CASE);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const t = typeEn(x, y), px = E(x), py = F(y);
+    if (t === VIDE) { // fond : paroi sombre (côté) ou sol de la galerie (dessus)
+      cc.fillStyle = vue === "cote" ? rgb(COUL[1], 0.3 * ton(x, y)) : rgb(SOL_DESSUS, ton(x, y) * (0.95 + 0.1 * hache(x >> 1, y >> 1, 9)));
+      cc.fillRect(px, py, CASE + 0.5, CASE + 0.5); continue;
+    }
+    if (t === OBJET) { // objet enfoui : il s'éclaire à mesure qu'on le dégage
+      const z = zonesDe.get(idx(x, y)) || null;
+      const zo = zones.find(q => q.sorte === "objet" && q.cases.has(idx(x, y)));
+      const f = zo.fait ? 1.1 : 0.3 + 0.7 * (zo.faites / zo.total);
+      cc.fillStyle = rgb(objCoul[idx(x, y)], f); cc.fillRect(px, py, CASE + 0.5, CASE + 0.5);
+      continue;
+    }
+    const i = idx(x, y), c = COUL[t];
+    let f = ton(x, y);
+    if (t !== BORD && pv[i] < PV[t]) f *= 1 + 0.35 * (1 - pv[i] / PV[t]); // case entamée : plus claire
+    cc.fillStyle = rgb(c, f); cc.fillRect(px, py, CASE + 0.5, CASE + 0.5);
+    // « Contour franc » : liseré sombre côté vide, reflet clair sous le vide (côté) ou face avant (dessus)
+    const h = !solide(x, y - 1), b = !solide(x, y + 1), g = !solide(x - 1, y), d = !solide(x + 1, y);
+    if (vue === "cote" && h) { cc.fillStyle = rgb(c, f * 1.3); cc.fillRect(px, py + a, CASE + 0.5, a); }
+    if (vue === "dessus" && b) { cc.fillStyle = rgb(c, f * 0.62); cc.fillRect(px, py + a, CASE + 0.5, CASE - a); } // face avant du mur (on sent la hauteur)
+    cc.fillStyle = "#1d1726";
+    if (h) cc.fillRect(px, py, CASE + 0.5, a);
+    if (b) cc.fillRect(px, py + CASE - a, CASE + 0.5, a);
+    if (g) cc.fillRect(px, py, a, CASE + 0.5);
+    if (d) cc.fillRect(px + CASE - a, py, a, CASE + 0.5);
+  }
+
+  // Zones : contour pointillé des dalles, contour des objets, % pendant qu'on y travaille, scintillement à la fin
+  for (const z of zones) {
+    if (z.cx < x0 - 10 || z.cx > x1 + 10 || z.cy < y0 - 10 || z.cy > y1 + 10) continue;
+    if (z.sorte === "dalle" && !z.fait) {
+      cc.strokeStyle = "rgba(255,240,200,0.55)"; cc.lineWidth = 1; cc.setLineDash([2, 3]); cc.beginPath();
+      for (const [ax, ay, bx, by] of z.bords) { cc.moveTo(E(ax), F(ay)); cc.lineTo(E(bx), F(by)); }
+      cc.stroke(); cc.setLineDash([]);
+    }
+    if (z.brille > 0) {
+      cc.fillStyle = "rgba(255,255,240," + Math.min(1, z.brille) + ")";
+      for (const i of z.sorte === "dalle" ? z.cases : z.cases) if (Math.random() < 0.25) cc.fillRect(E(i % L) + Math.random() * CASE, F((i / L) | 0) + Math.random() * CASE, a, a);
+      if (z.sorte === "dalle") for (const i of z.cases) if (Math.random() < 0.15) { cc.fillStyle = "rgba(190,255,170," + z.brille * 0.5 + ")"; cc.fillRect(E(i % L), F((i / L) | 0), CASE, CASE); }
+    }
+    if (!z.fait && z.faites > 0 && z.touche > 0) {
+      const p = Math.floor(z.faites / z.total * 100) + " %";
+      cc.font = "bold 12px monospace"; cc.textAlign = "center";
+      cc.lineWidth = 3; cc.strokeStyle = "#1d1726"; cc.strokeText(p, E(z.cx), F(z.cy) - 34);
+      cc.fillStyle = "#ffe7c2"; cc.fillText(p, E(z.cx), F(z.cy) - 34);
+    }
+  }
+
+  // Jet d'eau
+  for (const [ax, ay, bx, by, e] of jets) {
+    cc.strokeStyle = e === 2 ? "rgba(225,245,255,0.95)" : "rgba(140,200,255,0.6)"; cc.lineWidth = e === 2 ? 3 : 2;
+    cc.beginPath(); cc.moveTo(E(ax), F(ay)); cc.lineTo(E(bx), F(by)); cc.stroke();
+  }
+
+  // Mineur (12 × 18 petits pixels de 1/3 de case)
+  const cadre = m.pas > 0 ? Math.floor(m.pas * 8) % 2 : 0, lignes = SPRITE.concat(JAMBES[cadre]);
+  const mx = E(m.x), my = F(m.y) - (cadre ? 1 : 0);
+  for (let y = 0; y < 18; y++) for (let x = 0; x < 12; x++) {
+    const ch = lignes[y][m.sens > 0 ? x : 11 - x];
+    if (ch === ".") continue;
+    cc.fillStyle = PAL[ch]; cc.fillRect(mx + (x - 6) * a, my + (y - 18) * a, a + 0.05, a + 0.05);
+  }
+
+  // Particules, ondes, textes
+  for (const p of particules) { cc.globalAlpha = Math.min(1, p.vie / p.vie0 * 1.5); cc.fillStyle = rgb(p.c, 1); cc.fillRect(E(p.x), F(p.y), a, a); }
+  cc.globalAlpha = 1;
+  for (const o of anneaux) {
+    const r = o.t * 30 * CASE, al = 1 - o.t / 0.8;
+    cc.strokeStyle = "rgba(255,245,210," + al + ")"; cc.lineWidth = 4 * al + 1;
+    cc.beginPath(); cc.arc(E(o.x), F(o.y), r, 0, Math.PI * 2); cc.stroke();
+  }
+  for (const t of textes) {
+    const k = t.t < 0.2 ? 0.6 + t.t * 4 : 1.4 - Math.min(0.4, (t.t - 0.2)), al = t.t < 1 ? 1 : 1 - (t.t - 1) * 2;
+    cc.save(); cc.globalAlpha = Math.max(0, al); cc.translate(E(t.x), F(t.y) - t.t * 20); cc.scale(k, k);
+    cc.font = "bold 22px monospace"; cc.textAlign = "center"; cc.lineWidth = 5; cc.strokeStyle = "#1d1726"; cc.strokeText(t.txt, 0, 0);
+    cc.fillStyle = "#ffd56a"; cc.fillText(t.txt, 0, 0); cc.restore();
+  }
+}
+
+// Compagnon : vraie image GIF, qui suit le mineur avec un peu de retard
+const img = document.getElementById("compagnon"), comp = { x: m.x - 5, y: m.y, sens: 1 };
+let dirX = 1, dirY = 0;
+function majCompagnon(dt) {
+  if (Math.hypot(m.vx, m.vy) > 1) { const n = Math.hypot(m.vx, vue === "cote" ? 0 : m.vy) || 1; dirX = m.vx / n; dirY = vue === "cote" ? 0 : m.vy / n; }
+  const tx = m.x - (vue === "cote" ? m.sens * 5.4 : dirX * 5), ty = vue === "cote" ? m.y : m.y - dirY * 4;
+  const k = Math.min(1, dt * 5), avant = comp.x;
+  comp.x += (tx - comp.x) * k; comp.y += (ty - comp.y) * k;
+  if (Math.abs(comp.x - avant) > 0.02) comp.sens = comp.x > avant ? 1 : -1;
+  const cote = 32 * CASE / 4;
+  img.style.width = img.style.height = cote + "px";
+  img.style.transform = "translate(" + ((comp.x - camX) * CASE - cote / 2) + "px," + ((comp.y - camY) * CASE - cote * 29 / 32) + "px)" + (comp.sens > 0 ? " scaleX(-1)" : "");
+  // Vue de dessus : derrière le mineur s'il est plus haut à l'écran
+  img.style.zIndex = "0";
+}
+
+// ---------- Commandes ----------
+const joy = { x: 0, y: 0, id: null };
+const joystick = document.getElementById("joystick"), joyB = document.getElementById("joy");
+function lireJoy(e) {
+  const r = joystick.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  const d = Math.hypot(dx, dy), k = Math.min(1, 34 / (d || 1));
+  joyB.style.transform = "translate(" + dx * k + "px," + dy * k + "px)";
+  joy.x = Math.max(-1, Math.min(1, dx / 34)); joy.y = Math.max(-1, Math.min(1, dy / 34));
+  if (Math.hypot(joy.x, joy.y) < 0.2) joy.x = joy.y = 0;
+}
+joystick.addEventListener("pointerdown", e => { e.preventDefault(); joy.id = e.pointerId; joystick.setPointerCapture(e.pointerId); lireJoy(e); });
+joystick.addEventListener("pointermove", e => { if (e.pointerId === joy.id) lireJoy(e); });
+for (const ev of ["pointerup", "pointercancel"]) joystick.addEventListener(ev, e => { if (e.pointerId !== joy.id) return; joy.id = null; joy.x = joy.y = 0; joyB.style.transform = ""; });
+const boutonSaut = document.getElementById("saut");
+boutonSaut.addEventListener("pointerdown", e => { e.preventDefault(); sauter(); });
+// Clavier (PC) : flèches / ZQSD pour marcher, espace pour sauter
+const touches = new Set();
+addEventListener("keydown", e => { touches.add(e.key.toLowerCase()); if (e.key === " ") sauter(); });
+addEventListener("keyup", e => touches.delete(e.key.toLowerCase()));
+
+ecran.addEventListener("pointerdown", e => { doigt = { id: e.pointerId, sx: e.clientX, sy: e.clientY }; ecran.setPointerCapture(e.pointerId); if (!audio) try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (er) {} });
+ecran.addEventListener("pointermove", e => { if (doigt && e.pointerId === doigt.id) { doigt.sx = e.clientX; doigt.sy = e.clientY; } });
+for (const ev of ["pointerup", "pointercancel"]) ecran.addEventListener(ev, e => { if (doigt && e.pointerId === doigt.id) doigt = null; });
+
+const bVue = document.getElementById("b-vue"), bOutil = document.getElementById("b-outil");
+bVue.addEventListener("click", () => {
+  vue = vue === "cote" ? "dessus" : "cote";
+  bVue.querySelector("span").textContent = vue === "cote" ? "Côté" : "Dessus";
+  boutonSaut.hidden = vue !== "cote";
+  // Si on se retrouve dans un mur en changeant de boîte, on remonte jusqu'à de la place libre
+  for (let k = 0; k < 30 && touche(m.x, m.y); k++) m.y -= 0.5;
+  m.vy = 0;
+});
+bOutil.addEventListener("click", () => {
+  const liste = Object.keys(OUTILS);
+  outil = liste[(liste.indexOf(outil) + 1) % liste.length];
+  bOutil.querySelector("span").textContent = OUTILS[outil];
+});
+
+// ---------- Boucle ----------
+let avant = performance.now();
+function boucle(maintenant) {
+  const dt = Math.min(0.05, (maintenant - avant) / 1000); avant = maintenant;
+  // clavier → joystick (si le joystick n'est pas utilisé)
+  if (joy.id === null && touches.size) {
+    joy.x = (touches.has("arrowright") || touches.has("d") ? 1 : 0) - (touches.has("arrowleft") || touches.has("q") ? 1 : 0);
+    joy.y = (touches.has("arrowdown") || touches.has("s") ? 1 : 0) - (touches.has("arrowup") || touches.has("z") ? 1 : 0);
+  } else if (joy.id === null) joy.x = joy.y = 0;
+  majMineur(dt);
+  creuser(dt);
+  // Caméra : centrée sur le mineur, en douceur
+  const cx = m.x - largeur / CASE / 2, cy = m.y - 3 - hauteur / CASE / 2;
+  camX += (cx - camX) * Math.min(1, dt * 6); camY += (cy - camY) * Math.min(1, dt * 6);
+  camY = Math.max(0, camY); // pas de bande vide au-dessus du monde
+  for (const p of particules) { p.vie -= dt; p.x += p.vx * dt; p.y += p.vy * dt; if (vue === "cote") p.vy += 40 * dt; else { p.vx *= 1 - dt * 3; p.vy *= 1 - dt * 3; } }
+  for (let k = particules.length - 1; k >= 0; k--) if (particules[k].vie <= 0) particules.splice(k, 1);
+  for (const o of anneaux) o.t += dt;
+  while (anneaux.length && anneaux[0].t > 0.8) anneaux.shift();
+  for (const t of textes) t.t += dt;
+  while (textes.length && textes[0].t > 1.5) textes.shift();
+  for (const z of zones) { z.touche -= dt; z.brille = Math.max(0, z.brille - dt); }
+  secousse = Math.max(0, secousse - dt);
+  majCompagnon(dt);
+  dessiner(maintenant / 1000);
+  requestAnimationFrame(boucle);
+}
+generer();
+camX = m.x - largeur / CASE / 2; camY = m.y - 3 - hauteur / CASE / 2;
+requestAnimationFrame(boucle);
+</script>
+</body>
+</html>
