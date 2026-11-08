@@ -1,343 +1,190 @@
 /* =========================================================
-   Tunnel — mise en page
-   Le jeu est entièrement dessiné dans le canvas : ici on se
-   contente de le faire remplir l'écran et d'empêcher le
-   téléphone de faire défiler / zoomer la page.
+   Tunnel — mise en page (vue de dessus, v0.12)
+   Le jeu est dessiné dans les canvas ; ici : les boutons
+   « pixel sombre », le joystick et le panneau du bas.
    ========================================================= */
+
+:root {
+  --encre: #1d1726;
+  --bouton: rgba(29, 23, 38, 0.84);
+  --reflet: #3a3046;
+  --actif: #5a4c66;
+  --actif-reflet: #8a7a96;
+  --texte: #ffe7c2;
+  --discret: #a89a86;
+  --or: #e9a72e;
+  /* Coins en escalier, comme les sprites */
+  --pixel: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+}
 
 html, body {
   margin: 0;
   height: 100%;
-  overflow: hidden;            /* pas de barre de défilement */
-  position: fixed;             /* la page ne bouge jamais, même si le dessin dépasse d'un pixel */
+  overflow: hidden;
+  position: fixed;
   inset: 0;
-  background: #08090c;         /* noir de la mine */
-  overscroll-behavior: none;   /* pas d'effet « tirer pour rafraîchir » */
+  background: #050507;
+  overscroll-behavior: none;
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  font-family: monospace;
 }
 
-#jeu {
-  position: absolute;
-  left: 0;
-  top: 0;
-  touch-action: none;          /* tous les gestes vont au jeu, pas au navigateur */
-  image-rendering: pixelated;  /* agrandir sans flou : vrais gros pixels */
-  image-rendering: crisp-edges;
-  will-change: transform;
-}
+#monde { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; will-change: transform; }
+#compagnon { position: absolute; left: 0; top: 0; pointer-events: none; image-rendering: pixelated; image-rendering: crisp-edges; will-change: transform, filter; }
+#compagnon[hidden] { display: none; }
+#dessus { position: absolute; inset: 0; touch-action: none; }
 
-/* Les 3 outils du lance-pierre, petits et discrets en haut à droite */
-#outils {
-  position: absolute;
-  top: calc(12px + env(safe-area-inset-top));
-  right: 10px;
-  display: flex;
-  gap: 4px;
-}
-/* Boutons de zoom, en bas à droite près du pouce */
-#zoom {
-  position: absolute;
-  right: 10px;
-  bottom: calc(8px + env(safe-area-inset-bottom));
-  display: flex;
-  gap: 4px;
-}
-/* Style « pixel sombre » des boutons (v0.11) : coins en escalier, contour d'encre,
-   petit reflet en haut — comme les sprites. --pixel = forme commune des coins. */
-:root {
-  --encre: #1d1726;
-  --bouton: rgba(29, 23, 38, 0.82);
-  --bouton-reflet: #3a3046;
-  --bouton-actif: #3a3046;
-  --bouton-actif-reflet: #5a4c66;
-  --pixel: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
-}
-#outils button, #zoom button, #reglages-bas button {
-  width: 32px;
-  height: 32px;
-  padding: 4px;
+/* ---------- Boutons « pixel sombre » ---------- */
+.bouton {
+  position: relative;
+  height: 40px;
+  padding: 0 10px;
   border: 0;
   clip-path: var(--pixel);
   background: var(--bouton);
-  box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--bouton-reflet);
-  color: #a89a86;
+  box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--reflet);
+  color: var(--discret);
+  font: bold 13px monospace;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   touch-action: manipulation;
   cursor: pointer;
 }
-#outils button.actif, #reglages-bas button.actif, #zoom button:active {
-  background: var(--bouton-actif);
-  box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--bouton-actif-reflet);
-  color: #ffe7c2;
-}
-#outils svg, #zoom svg, #reglages-bas svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
-/* Lance-pierre désactivé : ses outils s'effacent */
-#outils.eteint { opacity: 0.35; }
+.bouton.carre { width: 44px; height: 44px; padding: 0; justify-content: center; }
+.bouton.actif { background: var(--actif); box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--actif-reflet); color: var(--texte); }
+.bouton:active { filter: brightness(1.2); }
+.icone { display: block; width: 20px; height: 20px; flex: none; }
+.icone svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
 
-/* Profondeur et version : en haut au milieu (le bas de l'écran est pour les pouces) */
-#profondeur {
+/* Sac : en haut à gauche, il « saute » quand on ramasse */
+#b-sac { position: absolute; left: 10px; top: calc(10px + env(safe-area-inset-top)); color: var(--texte); }
+#b-sac.pop { animation: pop 0.22s ease-out; }
+@keyframes pop { 40% { transform: scale(1.18); } }
+#haut-droite { position: absolute; right: 10px; top: calc(10px + env(safe-area-inset-top)); display: flex; gap: 6px; }
+
+/* Outils en colonne, bord droit, au-dessus du bas de l'écran */
+#outils {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(10px + env(safe-area-inset-top));
+  right: 10px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#outils em {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  min-width: 12px;
+  padding: 0 2px;
+  background: var(--or);
+  color: var(--encre);
+  font: bold 11px/13px monospace;
+  font-style: normal;
   text-align: center;
-  font: bold 11px monospace;
-  color: rgba(255, 240, 220, 0.4);
-  pointer-events: none;        /* le doigt passe au travers */
 }
+#outils .vide em { background: #6a5f70; }
 
-#version {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(24px + env(safe-area-inset-top));
-  text-align: center;
-  font: 10px monospace;
-  color: rgba(255, 240, 220, 0.18);
-  pointer-events: none;
-}
-
-
-/* Calque du mineur et des objets : par-dessus le monde, le doigt passe au travers */
-#calque {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-}
-
-/* Compagnon (TEST) : vraie image (GIF), positionnée par app.js, agrandie sans flou */
-#compagnon {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-  will-change: transform;
-}
-#compagnon[hidden] { display: none; }
-
-/* Compteur de ce qu'on a ramassé, discret en haut à gauche */
-#compteur {
-  position: absolute;
-  left: 10px;
-  top: calc(12px + env(safe-area-inset-top));
-  font: bold 11px monospace;
-  line-height: 15px;
-  color: #ffe7c2;
-  pointer-events: none;
-  text-shadow: 0 1px 0 #08090c;
-}
-#compteur div { transform-origin: left center; } /* (le petit saut grossit depuis la gauche) */
-#compteur i {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 5px;
-  outline: 1px solid rgba(26, 20, 32, 0.8);
-}
-
-/* Tout en bas à gauche : son, lance-pierre, taille du grattoir */
-#reglages-bas {
-  position: absolute;
-  left: 10px;
-  bottom: calc(8px + env(safe-area-inset-bottom));
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* Énergie : trait très fin tout en haut de l'écran */
-#energie {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: env(safe-area-inset-top);
-  height: 2px;
-  pointer-events: none;
-}
-#energie-niveau {
-  height: 100%;
-  width: 100%;
-  background: rgba(233, 167, 46, 0.55);
-}
-
-/* Fin d'expédition : petite carte au centre, sur la mine assombrie */
-#fin {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(8, 9, 12, 0.6);
-  padding: 16px;
-}
-#fin[hidden] { display: none; }
-.fin-carte {
-  width: 100%;
-  max-width: 300px;
-  background: #1b1a1f;
-  border: 1px solid rgba(255, 236, 200, 0.12);
-  border-radius: 10px;
-  padding: 16px;
-  color: #ffe7c2;
-  font: 13px monospace;
-}
-.fin-carte h1 { margin: 0 0 6px; font-size: 16px; font-weight: bold; }
-.fin-prof { margin: 0 0 12px; color: rgba(255, 231, 194, 0.6); }
-.fin-prof b { color: #ffe7c2; }
-#fin-butin div {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-  border-bottom: 1px solid rgba(255, 236, 200, 0.06);
-}
-#fin-butin i { width: 8px; height: 8px; outline: 1px solid rgba(26, 20, 32, 0.8); flex: none; }
-#fin-butin span { flex: 1; color: rgba(255, 231, 194, 0.7); }
-#fin-rejouer {
-  margin-top: 14px;
-  width: 100%;
-  height: 40px;
-  border: 0;
-  border-radius: 6px;
-  background: #e9a72e;
-  color: #26304f;
-  font: bold 13px monospace;
-  cursor: pointer;
-}
-
-/* Bandeau « trouvaille » : en haut au milieu, sous la profondeur */
-#trouvaille {
+/* Bandeau : en haut au milieu */
+#bandeau {
   position: absolute;
   left: 50%;
-  top: calc(44px + env(safe-area-inset-top));
+  top: calc(60px + env(safe-area-inset-top));
   transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
   max-width: calc(100% - 32px);
-  padding: 6px 12px 6px 8px;
-  border-radius: 8px;
-  background: rgba(27, 26, 31, 0.92);
-  border: 1px solid rgba(255, 236, 200, 0.14);
-  color: #ffe7c2;
-  font: bold 12px monospace;
+  padding: 8px 14px;
+  clip-path: var(--pixel);
+  background: var(--or);
+  color: var(--encre);
+  box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px #ffd56a;
+  font: bold 13px monospace;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
-  animation: arrivee 0.25s ease-out;
   transition: opacity 0.4s, transform 0.4s;
 }
-#trouvaille[hidden] { display: none; }
-#trouvaille.parti { opacity: 0; transform: translate(-50%, -8px); }
-#trouvaille canvas { image-rendering: pixelated; flex: none; }
-#trouvaille span { overflow: hidden; text-overflow: ellipsis; }
-@keyframes arrivee { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@media (prefers-reduced-motion: reduce) { #trouvaille { animation: none; transition: none; } }
+#bandeau.cache { opacity: 0; transform: translate(-50%, -8px); }
+#bandeau.zone { background: rgba(29, 23, 38, 0.9); color: var(--texte); box-shadow: inset 0 0 0 2px var(--encre), inset 0 2px 0 2px var(--reflet); }
+#bandeau small { font-weight: normal; opacity: 0.75; }
 
-/* Joystick : en bas à gauche, au-dessus des petits réglages */
+/* Joystick : en bas à gauche */
 #joystick {
   position: absolute;
   left: 14px;
-  bottom: calc(52px + env(safe-area-inset-bottom));
-  width: 104px;
-  height: 104px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  width: 108px;
+  height: 108px;
   border-radius: 50%;
   background: rgba(29, 23, 38, 0.55);
   border: 2px solid var(--encre);
   box-shadow: inset 0 2px 0 rgba(90, 76, 102, 0.5);
   touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-#joystick.actif { background: rgba(29, 23, 38, 0.75); }
-#joy-bouton {
-  width: 44px;
-  height: 44px;
-  clip-path: var(--pixel);
-  background: var(--bouton-actif);
-  box-shadow: inset 0 0 0 2px var(--encre), inset 0 3px 0 2px var(--bouton-actif-reflet);
-  pointer-events: none;
-}
-#joystick.actif #joy-bouton { background: #4a3e56; }
+#joy { width: 44px; height: 44px; clip-path: var(--pixel); background: var(--actif); box-shadow: inset 0 0 0 2px var(--encre), inset 0 3px 0 2px var(--actif-reflet); pointer-events: none; }
 
-/* Réglages de démo + Compagnon : panneau en bas (le jeu reste visible au-dessus), qui défile */
-#panneau-demo, #panneau-compagnon {
+/* ---------- Panneau du bas ---------- */
+#panneau {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 55%;
-  z-index: 10;                 /* par-dessus le joystick et les boutons */
+  max-height: 62%;
+  z-index: 10;
   display: flex;
   flex-direction: column;
-  background: rgba(27, 26, 31, 0.96);
-  border-top: 1px solid rgba(255, 236, 200, 0.14);
-  border-radius: 12px 12px 0 0;
-  color: #ffe7c2;
-  font: 12px monospace;
+  background: rgba(24, 21, 30, 0.97);
+  border-top: 2px solid var(--encre);
+  box-shadow: 0 -2px 0 var(--reflet);
+  color: var(--texte);
+  font: 13px monospace;
   padding-bottom: env(safe-area-inset-bottom);
 }
-#panneau-demo[hidden], #panneau-compagnon[hidden] { display: none; }
-.tete-reglages { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px; }
-.tete-reglages button { width: 32px; height: 32px; border: 0; border-radius: 6px; background: rgba(255, 236, 200, 0.08); color: #ffe7c2; font-size: 14px; }
-#liste-reglages { overflow-y: auto; padding: 0 14px; -webkit-overflow-scrolling: touch; }
+#panneau[hidden] { display: none; }
+.tete { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 4px; }
+.tete b { font-size: 14px; }
+#panneau-fermer { width: 36px; height: 36px; border: 0; background: transparent; color: var(--discret); display: flex; align-items: center; justify-content: center; }
+#panneau-corps { overflow-y: auto; padding: 0 12px 12px; -webkit-overflow-scrolling: touch; }
 
-/* Liste des compagnons : une ligne par starter (+ « Aucun »), choix en un tap */
-#liste-compagnons { overflow-y: auto; padding: 4px 14px 14px; -webkit-overflow-scrolling: touch; }
-.ligne-compagnon {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #ffe7c2;
-  font: 12px monospace;
-  padding: 7px 6px;
-  text-align: left;
-}
+/* Lignes de réglage : libellé à gauche, choix à droite */
+.ligne { display: flex; align-items: center; gap: 8px; min-height: 40px; border-bottom: 1px solid rgba(255, 236, 200, 0.07); }
+.ligne > span { flex: 1; min-width: 0; color: rgba(255, 231, 194, 0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ligne small { color: rgba(255, 231, 194, 0.45); }
+.choix { display: flex; flex: none; }
+.choix button { height: 30px; padding: 0 9px; border: 0; background: rgba(255, 236, 200, 0.07); color: var(--discret); font: bold 12px monospace; }
+.choix button.actif { background: var(--actif); color: var(--texte); }
+.ligne.lien { cursor: pointer; }
+.ligne.lien::after { content: "›"; color: var(--discret); font-size: 16px; }
+.ligne a { color: inherit; text-decoration: none; flex: 1; }
+.bouton-large { width: 100%; height: 38px; margin-top: 10px; border: 0; background: rgba(255, 236, 200, 0.09); color: var(--texte); font: bold 12px monospace; }
+
+/* Sac : une ligne par sorte de butin */
+.butin { display: flex; align-items: center; gap: 10px; min-height: 34px; border-bottom: 1px solid rgba(255, 236, 200, 0.07); }
+.butin canvas { width: 20px; height: 20px; image-rendering: pixelated; flex: none; }
+.butin span { flex: 1; }
+.butin b { min-width: 40px; text-align: right; }
+.butin small { min-width: 54px; text-align: right; color: rgba(255, 231, 194, 0.45); }
+.total { display: flex; justify-content: space-between; padding: 10px 0 2px; font-weight: bold; color: var(--or); }
+
+/* Trouvailles : grille de 4 cases */
+.grille { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding-top: 4px; }
+.case { background: rgba(255, 236, 200, 0.05); padding: 6px 2px 5px; text-align: center; clip-path: var(--pixel); }
+.case canvas { width: 48px; height: 48px; image-rendering: pixelated; display: block; margin: 0 auto 3px; }
+.case span { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.case small { display: block; font-size: 11px; color: rgba(255, 231, 194, 0.45); }
+.case.inconnue span { color: rgba(255, 231, 194, 0.35); }
+
+/* Compagnon : une ligne par starter */
+.ligne-compagnon { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; color: var(--texte); font: 12px monospace; padding: 6px 4px; text-align: left; }
 .ligne-compagnon.actif { background: rgba(255, 236, 200, 0.1); }
-.ligne-compagnon img, .ligne-compagnon .aucun-compagnon {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-}
-.ligne-compagnon .nom-compagnon { flex: 1; }
+.ligne-compagnon img, .ligne-compagnon i { width: 32px; height: 32px; flex: none; image-rendering: pixelated; }
+.ligne-compagnon span { flex: 1; }
 .ligne-compagnon small { color: rgba(255, 231, 194, 0.5); }
-.groupe-reglages { margin: 10px 0 2px; color: #e9a72e; font-weight: bold; }
-.ligne-reglage { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.ligne-reglage span { flex: 1; min-width: 0; color: rgba(255, 231, 194, 0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ligne-reglage small { color: rgba(255, 231, 194, 0.45); }
-.ligne-reglage input { width: 110px; flex: none; accent-color: #e9a72e; }
-.ligne-reglage b { width: 52px; flex: none; text-align: right; }
-.pied-reglages { display: flex; gap: 8px; padding: 10px 14px 12px; }
-.pied-reglages button { flex: 1; height: 36px; border: 0; border-radius: 6px; background: rgba(255, 236, 200, 0.1); color: #ffe7c2; font: bold 12px monospace; }
 
-/* Bouton saut : gros rond en bas à droite, au-dessus du zoom */
-#bouton-saut {
-  position: absolute;
-  right: 14px;
-  bottom: calc(56px + env(safe-area-inset-bottom));
-  width: 76px;
-  height: 76px;
-  padding: 20px;
-  border: 0;
-  clip-path: var(--pixel);
-  background: var(--bouton-actif);
-  box-shadow: inset 0 0 0 2px var(--encre), inset 0 3px 0 2px var(--bouton-actif-reflet);
-  color: #ffe7c2;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-#bouton-saut.appuye { background: #4a3e56; box-shadow: inset 0 0 0 2px var(--encre), inset 0 -3px 0 2px var(--bouton-reflet); }
-#bouton-saut svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
+@media (prefers-reduced-motion: reduce) { #b-sac.pop { animation: none; } #bandeau { transition: none; } }

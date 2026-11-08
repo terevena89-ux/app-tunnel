@@ -1,5 +1,14 @@
 # Tunnel — journal des nouveautés
 
+## 0.12.0 — 2026-11-08
+- **Nouvelle version en vue de dessus** (remplace la vue de côté, gardée à part dans « Réglages › Ancienne version »).
+- **Départ en pleine nature** : clairière (herbe, fleurs, arbres, petit chemin) au pied d'une falaise ; l'entrée de la mine est dans la paroi. Lumière du jour dehors, mine sombre dedans.
+- **Progression** : 5 zones de plus en plus loin de l'entrée (Galerie d'entrée, Grotte humide, Veine de cristal, Ruines anciennes, Cœur de la montagne), chacune avec ses couleurs, son vieux sol et son butin ; la roche est 1,4 fois plus dure à chaque zone. Nom de la zone affiché la première fois qu'on y entre.
+- **4 outils** (colonne à droite) : jet d'énergie (loin, rapide), pinceau (au contact, précis et doux), pioche (au contact, gros coups), bombes (trouvées en creusant, lancées vers le doigt ; le mineur est juste soufflé).
+- **Objets fragiles** : 12 objets enfouis (ammonite, cristal, amphore, œuf de dragon…). Le jet trop longtemps dessus, la pioche ou une bombe les fêlent puis les cassent ; le pinceau jamais. Qualité au final : intacte, fêlée ou abîmée.
+- **Collecte** : mini-butin attiré par l'aimant, « +N » qui saute, bip qui monte en série ; objet déterré = cérémonie (il s'élève, rayons de lumière, file dans le sac) ; sac qui se remplit ; écran « Trouvailles » à compléter.
+- **Vibrations différentes par outil** (réglage Fort / Léger / Coupé), son activé par défaut, réglage Effets Complets / Simples.
+
 ## 0.11.0 — 2026-11-07
 - Style graphique harmonisé avec les sprites de créatures :
   - Mineur redessiné plus finement (12 × 18 pixels au lieu de 8 × 12) : contour sombre franc, ombrage en 2 tons, couleurs plus vives.

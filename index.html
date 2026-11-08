@@ -2,7 +2,6 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <!-- user-scalable=no : on ne veut pas que deux doigts zooment la page (ils servent à regarder ailleurs) -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Tunnel</title>
   <meta name="description" content="Petit jeu de minage tranquille, à jouer en écoutant un podcast.">
@@ -11,76 +10,40 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Le jeu entier est dessiné dans ce « tableau » (canvas) -->
-  <canvas id="jeu"></canvas>
-  <!-- Calque par-dessus : le mineur, les mini-objets et la poussière, dessinés bien nets -->
-  <canvas id="calque"></canvas>
-  <!-- Compagnon (TEST) : une vraie image (GIF animé), positionnée par app.js -->
+  <!-- Le monde (petite image agrandie ×3 sans flou) -->
+  <canvas id="monde"></canvas>
+  <!-- Compagnon : vraie image (GIF animé), placée par app.js -->
   <img id="compagnon" alt="" hidden>
+  <!-- Calque du dessus (net) : contours des zones, %, chiffres, cérémonie des trouvailles. C'est lui qui reçoit le doigt. -->
+  <canvas id="dessus"></canvas>
 
-  <!-- Énergie de la lampe : un trait très fin tout en haut -->
-  <div id="energie"><div id="energie-niveau"></div></div>
-
-  <!-- Fin d'expédition (quand la lampe s'éteint) -->
-  <div id="fin" hidden>
-    <div class="fin-carte">
-      <h1>Expédition terminée</h1>
-      <p class="fin-prof">Profondeur atteinte <b id="fin-profondeur">0 m</b></p>
-      <div id="fin-butin"></div>
-      <button id="fin-rejouer">Nouvelle expédition</button>
-    </div>
+  <!-- En haut à gauche : le sac (valeur totale) -->
+  <button id="b-sac" class="bouton" aria-label="Sac"><span class="icone" data-icone="sac"></span><span id="sac-total">0</span></button>
+  <!-- En haut à droite : collection et réglages -->
+  <div id="haut-droite">
+    <button id="b-collection" class="bouton carre" aria-label="Trouvailles"><span class="icone" data-icone="livre"></span></button>
+    <button id="b-reglages" class="bouton carre" aria-label="Réglages"><span class="icone" data-icone="roue"></span></button>
   </div>
 
-  <!-- Bandeau « trouvaille » (gros cristal ou fossile ramassé) -->
-  <div id="trouvaille" hidden><canvas id="trouvaille-dessin"></canvas><span id="trouvaille-nom"></span></div>
+  <!-- Bandeau (trouvaille, nouvelle zone…) -->
+  <div id="bandeau" class="cache"></div>
 
-  <!-- Ce qu'on a ramassé (rempli par app.js) -->
-  <div id="compteur"></div>
-
-  <!-- Tout en bas à gauche : son, lance-pierre (activé ou non), taille du grattoir -->
-  <div id="reglages-bas">
-    <button id="bouton-son" aria-label="Activer le son"></button>
-    <button id="bouton-lance" aria-label="Activer le lance-pierre"></button>
-    <button id="bouton-compagnon" aria-label="Choisir un compagnon"></button>
-    <button id="bouton-reglages" aria-label="Réglages de démo"></button>
-  </div>
-
-  <!-- Compagnon (TEST) : choisir le starter actif, ou aucun -->
-  <div id="panneau-compagnon" hidden>
-    <div class="tete-reglages"><b>Compagnon</b><button id="fermer-compagnon" aria-label="Fermer">✕</button></div>
-    <div id="liste-compagnons"></div>
-  </div>
-
-  <!-- Réglages de DÉMO : panneau en bas, le jeu reste visible au-dessus -->
-  <div id="panneau-demo" hidden>
-    <div class="tete-reglages"><b>Réglages de démo</b><button id="fermer-reglages" aria-label="Fermer">✕</button></div>
-    <div id="liste-reglages"></div>
-    <div class="pied-reglages">
-      <button id="reglages-defaut">Valeurs par défaut</button>
-      <button id="reglages-copier">Copier les valeurs</button>
-    </div>
-  </div>
-  <!-- Déplacement : joystick (gauche / droite = marcher, vers le haut = sauter) -->
-  <div id="joystick" aria-label="Joystick : marcher"><div id="joy-bouton"></div></div>
-  <!-- Saut : gros bouton rond en bas à droite, pour le pouce droit -->
-  <button id="bouton-saut" aria-label="Sauter"></button>
-
-  <!-- Outils du lance-pierre, en haut à droite (les dessins sont ajoutés par app.js) -->
+  <!-- Outils, en colonne à droite -->
   <div id="outils">
-    <button data-outil="grappin" aria-label="Grappin : s'accroche à la roche"></button>
-    <button data-outil="rebond" aria-label="Rebond : rebondit sur la roche"></button>
-    <button data-outil="perce" aria-label="Perce : casse la terre et le sable"></button>
+    <button class="bouton carre" data-outil="jet" aria-label="Jet d'énergie"><span class="icone" data-icone="jet"></span></button>
+    <button class="bouton carre" data-outil="pinceau" aria-label="Pinceau"><span class="icone" data-icone="pinceau"></span></button>
+    <button class="bouton carre" data-outil="pioche" aria-label="Pioche"><span class="icone" data-icone="pioche"></span></button>
+    <button class="bouton carre" data-outil="bombe" aria-label="Bombe"><span class="icone" data-icone="bombe"></span><em id="nb-bombes">0</em></button>
   </div>
 
-  <!-- Zoom (on peut aussi pincer à deux doigts) -->
-  <div id="zoom">
-    <button data-zoom="-1" aria-label="Voir de plus loin"><svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="2" fill="currentColor"/></svg></button>
-    <button data-zoom="1" aria-label="Voir de plus près"><svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="2" fill="currentColor"/><rect x="6" y="3" width="2" height="8" fill="currentColor"/></svg></button>
-  </div>
+  <!-- Déplacement -->
+  <div id="joystick" aria-label="Joystick : marcher"><div id="joy"></div></div>
 
-  <!-- Profondeur et version, discrètes en haut au milieu -->
-  <div id="profondeur">0 m</div>
-  <div id="version"></div>
+  <!-- Panneau en bas (réglages, sac, trouvailles, compagnon) : rempli par app.js -->
+  <div id="panneau" hidden>
+    <div class="tete"><b id="panneau-titre"></b><button id="panneau-fermer" aria-label="Fermer"><span class="icone" data-icone="croix"></span></button></div>
+    <div id="panneau-corps"></div>
+  </div>
 
   <script src="app.js"></script>
 </body>
