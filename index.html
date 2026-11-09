@@ -17,6 +17,8 @@
   <!-- Calque du dessus (net) : contours des zones, %, chiffres, cérémonie des trouvailles. C'est lui qui reçoit le doigt. -->
   <canvas id="dessus"></canvas>
 
+  <!-- Tout en haut : barre d'XP (or) et lampe (crème), et le niveau -->
+  <div id="barres"><div id="b-xp"><span></span></div><div id="b-lampe"><span></span></div><small id="niveau">Niv. 1</small></div>
   <!-- En haut à gauche : le sac (valeur totale) -->
   <button id="b-sac" class="bouton" aria-label="Sac"><span class="icone" data-icone="sac"></span><span id="sac-total">0</span></button>
   <!-- En haut à droite : collection et réglages -->
@@ -38,6 +40,12 @@
 
   <!-- Déplacement -->
   <div id="joystick" aria-label="Joystick : marcher"><div id="joy"></div></div>
+
+  <!-- Choix d'une carte (montée de niveau ou capsule) -->
+  <div id="choix" hidden></div>
+  <!-- Noir qui tombe quand la lampe s'éteint, puis écran de bilan / Atelier -->
+  <div id="noir" hidden></div>
+  <div id="ecran" hidden></div>
 
   <!-- Panneau en bas (réglages, sac, trouvailles, compagnon) : rempli par app.js -->
   <div id="panneau" hidden>

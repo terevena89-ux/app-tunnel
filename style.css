@@ -60,10 +60,10 @@ html, body {
 .icone svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
 
 /* Sac : en haut à gauche, il « saute » quand on ramasse */
-#b-sac { position: absolute; left: 10px; top: calc(10px + env(safe-area-inset-top)); color: var(--texte); }
+#b-sac { position: absolute; left: 10px; top: calc(40px + env(safe-area-inset-top)); color: var(--texte); }
 #b-sac.pop { animation: pop 0.22s ease-out; }
 @keyframes pop { 40% { transform: scale(1.18); } }
-#haut-droite { position: absolute; right: 10px; top: calc(10px + env(safe-area-inset-top)); display: flex; gap: 6px; }
+#haut-droite { position: absolute; right: 10px; top: calc(40px + env(safe-area-inset-top)); display: flex; gap: 6px; }
 
 /* Outils en colonne, bord droit, au-dessus du bas de l'écran */
 #outils {
@@ -92,7 +92,7 @@ html, body {
 #bandeau {
   position: absolute;
   left: 50%;
-  top: calc(60px + env(safe-area-inset-top));
+  top: calc(90px + env(safe-area-inset-top));
   transform: translateX(-50%);
   max-width: calc(100% - 32px);
   padding: 8px 14px;
@@ -192,3 +192,55 @@ html, body {
 .ligne-compagnon small { color: rgba(255, 231, 194, 0.5); }
 
 @media (prefers-reduced-motion: reduce) { #b-sac.pop { animation: none; } #bandeau { transition: none; } }
+
+/* ---------- Barres du haut (XP et lampe) ---------- */
+#barres { position: absolute; left: 8px; right: 8px; top: calc(6px + env(safe-area-inset-top)); pointer-events: none; }
+#b-xp, #b-lampe { height: 8px; background: #000; border: 2px solid var(--encre); }
+#b-lampe { height: 6px; margin-top: 2px; }
+#b-xp span, #b-lampe span { display: block; height: 100%; width: 0; }
+#b-xp span { background: var(--or); box-shadow: inset 0 2px 0 #ffd56a; transition: width 0.15s; }
+#b-lampe span { background: #ffe7a0; }
+#b-lampe span.faible { background: #ff9a7a; animation: clignote 0.8s steps(2) infinite; }
+@keyframes clignote { 50% { opacity: 0.45; } }
+#niveau { position: absolute; right: 2px; top: 21px; font: bold 10px monospace; color: var(--discret); text-shadow: 0 1px 0 #000; }
+
+/* ---------- Choix d'une carte (3 cartes empilées au milieu) ---------- */
+#choix { position: absolute; inset: 0; z-index: 20; background: rgba(8, 6, 12, 0.74); display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 0 14px; }
+#choix[hidden] { display: none; }
+.choix-titre { text-align: center; color: var(--or); font: bold 18px monospace; margin-bottom: 4px; }
+.carte { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; border: 2px solid #000; background: var(--encre); color: var(--texte); text-align: left; font: 13px monospace; clip-path: var(--pixel); box-shadow: inset 0 0 0 2px var(--reflet); cursor: pointer; }
+.carte:active { filter: brightness(1.25); }
+.carte i { flex: none; width: 40px; height: 40px; display: grid; place-items: center; background: var(--actif); color: var(--texte); clip-path: var(--pixel); }
+.carte i svg { width: 24px; height: 24px; shape-rendering: crispEdges; }
+.carte span { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.carte em { font-style: normal; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--discret); }
+.carte b { font-size: 14px; }
+.carte small { font-size: 11px; color: rgba(255, 231, 194, 0.7); line-height: 1.3; }
+.carte.r1 { box-shadow: inset 0 0 0 2px #78d2ff; } .carte.r1 em { color: #78d2ff; } .carte.r1 i { background: #2c4a63; }
+.carte.r2 { box-shadow: inset 0 0 0 2px #ce92ff; } .carte.r2 em { color: #ce92ff; } .carte.r2 i { background: #4b3366; }
+.relance { align-self: center; margin-top: 4px; height: 34px; padding: 0 14px; border: 2px solid #000; background: var(--bouton); color: var(--discret); font: bold 12px monospace; }
+
+/* ---------- Noir de fin, bilan et Atelier ---------- */
+#noir { position: absolute; inset: 0; z-index: 25; background: #000; opacity: 0; pointer-events: none; }
+#noir[hidden] { display: none; }
+#ecran { position: absolute; inset: 0; z-index: 30; background: #17131e; color: var(--texte); font: 13px monospace; overflow-y: auto; }
+#ecran[hidden] { display: none; }
+.ecran-corps { min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; padding: calc(18px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
+.discret { color: var(--discret); } .centre { text-align: center; } .or { color: var(--or); } .vert { color: #7ccf6a; }
+.gros { font-size: 24px; font-weight: bold; color: var(--or); text-align: center; margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
+.ligne-b { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 236, 200, 0.08); }
+.ligne-b span:last-child { text-align: right; }
+.espace { flex: 1; min-height: 12px; }
+.btn { height: 42px; border: 2px solid #000; background: var(--actif); color: var(--texte); font: bold 13px monospace; clip-path: var(--pixel); }
+.btn.sombre { background: var(--encre); color: var(--discret); }
+.tete-a { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; margin-bottom: 4px; }
+.atel { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 0; border: 0; border-bottom: 1px solid rgba(255, 236, 200, 0.08); background: transparent; color: var(--texte); font: 12px monospace; text-align: left; }
+.atel > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.atel small { color: var(--discret); }
+.atel:disabled { opacity: 1; }
+.atel:disabled .prix { color: var(--discret); }
+.pips { display: flex; gap: 2px; flex: none; }
+.pips i { width: 7px; height: 10px; background: var(--reflet); }
+.pips i.on { background: var(--or); }
+.prix { min-width: 48px; text-align: right; color: var(--or); font-weight: bold; font-variant-numeric: tabular-nums; }
+#outils [hidden] { display: none; }

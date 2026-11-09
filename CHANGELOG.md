@@ -1,5 +1,14 @@
 # Tunnel — journal des nouveautés
 
+## 0.15.0 — 2026-11-09
+- **Nouvelle boucle de jeu, façon Survivors** : on part en expédition avec une petite pioche seule. Les blocs ramassés (et les gemmes, les trouvailles) donnent de l'XP ; à chaque niveau le jeu se met en pause et on choisit **1 carte sur 3** (commune, rare ou épique). Une relance possible avec l'Atelier.
+- **20 cartes** : pioche plus forte / plus large / plus rapide, aimant, bottes, grande lampe, bras long ; nouveaux outils (jet, pinceau, bombes, foreuse) ; aides automatiques (scies orbitales, drone foreur, étincelles qui visent le minerai) ; effets (blocs doubles, mini-boum, minerai généreux, jet qui ricoche, bombes en chaîne, lampe économe).
+- **Capsules** cachées dans la roche (on les voit briller à travers) : choix de cartes rares et épiques. **Recharges de lampe** dans la roche et dans les grottes.
+- **Lampe** : elle s'use dans la mine (~9 min). Quand elle s'éteint, le noir tombe et le **bilan** s'affiche ; le butin devient des **pièces** gardées. On peut aussi « Remonter » depuis Réglages.
+- **Atelier** : améliorations permanentes achetées avec les pièces (pioche de départ, lampe, aimant, sac, flair, relance, départ avec le jet).
+- Barres d'XP et de lampe tout en haut ; aimant de départ plus court.
+- Réglages : curseurs du jet retirés (le jet se renforce avec les cartes) ; « Nouvelle mine » remplacé par « Atelier » et « Remonter ».
+
 ## 0.14.0 — 2026-11-09
 - **Blocs à ramasser** : en creusant, des petits cubes (2×2) de la couleur de la matière sautent du mur, rebondissent, restent un instant par terre puis filent vers le mineur ; parfois un gros cube (4×4, contour sombre) qui vaut 4 et fait un « clac ». Ils ont une petite valeur (terre 1, roche 2, roche dure 3, minerai 4) : le total du sac monte en creusant.
 - **Collision avec les murs du haut** : le mineur s'arrête au pied de la face avant du mur au lieu de grimper dessus.
