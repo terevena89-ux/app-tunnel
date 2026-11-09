@@ -267,7 +267,7 @@ html, body {
 #joystick.actif #joy-bouton { background: #4a3e56; }
 
 /* Réglages de démo + Compagnon : panneau en bas (le jeu reste visible au-dessus), qui défile */
-#panneau-demo, #panneau-compagnon {
+#panneau-demo, #panneau-compagnon, #atelier {
   position: absolute;
   left: 0;
   right: 0;
@@ -283,7 +283,7 @@ html, body {
   font: 12px monospace;
   padding-bottom: env(safe-area-inset-bottom);
 }
-#panneau-demo[hidden], #panneau-compagnon[hidden] { display: none; }
+#panneau-demo[hidden], #panneau-compagnon[hidden], #atelier[hidden] { display: none; }
 .tete-reglages { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px; }
 .tete-reglages button { width: 32px; height: 32px; border: 0; border-radius: 6px; background: rgba(255, 236, 200, 0.08); color: #ffe7c2; font-size: 14px; }
 #liste-reglages { overflow-y: auto; padding: 0 14px; -webkit-overflow-scrolling: touch; }
@@ -396,3 +396,33 @@ html, body {
 .gp-outils { display: flex; gap: 6px; margin-top: 6px; }
 .gp-outils button { flex: 1; height: 38px; border: 0; border-radius: 6px; background: rgba(255, 236, 200, 0.08); color: #a89a86; font: bold 12px monospace; }
 .gp-outils button.actif { background: #3a3046; color: #ffe7c2; box-shadow: inset 0 0 0 1px #e9b872; }
+
+/* ESSAI : plus de jauge de lampe (plus de timer) */
+#energie { display: none; }
+/* Bonus en cours (capsules), discret sous la profondeur */
+#bonus {
+  position: absolute; left: 60px; right: 60px;
+  bottom: calc(150px + env(safe-area-inset-bottom));
+  text-align: center; font: bold 11px monospace; color: #c9a8ff;
+  text-shadow: 0 1px 0 #08090c; pointer-events: none;
+}
+/* L'outil de l'étape en cours clignote doucement */
+#outils-main button.conseil { animation: conseil 1s ease-in-out infinite; }
+@keyframes conseil { 50% { color: #e9b872; box-shadow: inset 0 0 0 2px #e9b872, inset 0 2px 0 2px var(--bouton-reflet); } }
+@media (prefers-reduced-motion: reduce) { #outils-main button.conseil { animation: none; color: #e9b872; } }
+/* Réserve du laser : petite barre en bas de son bouton */
+#outils-main .reserve { position: absolute; left: 6px; right: 6px; bottom: 4px; height: 3px; background: #2a2232; }
+#outils-main .reserve i { display: block; height: 100%; width: 100%; background: #ffb860; }
+#outils-main .reserve.vide i { background: #e9736a; }
+/* Atelier : liste compacte */
+.tete-reglages span#atelier-pieces { flex: 1; text-align: right; margin-right: 10px; color: #e9b872; font-weight: bold; }
+#atelier-liste { overflow-y: auto; padding: 0 14px; }
+.atel-ligne { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid rgba(255, 236, 200, 0.08); }
+.atel-ligne span { flex: 1; min-width: 0; font-weight: bold; }
+.atel-ligne small { display: block; font-weight: normal; color: rgba(255, 231, 194, 0.5); }
+.atel-ligne .pips { display: flex; gap: 2px; }
+.atel-ligne .pips i { width: 6px; height: 10px; background: #3a3046; }
+.atel-ligne .pips i.on { background: #e9b872; }
+.atel-ligne button { min-width: 58px; height: 30px; border: 0; border-radius: 6px; background: #3a3046; color: #ffe7c2; font: bold 12px monospace; }
+.atel-ligne button:disabled { opacity: 0.4; }
+#mode-demo { width: 20px; height: 20px; accent-color: #e9a72e; }

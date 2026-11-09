@@ -42,7 +42,7 @@
     <button id="bouton-son" aria-label="Activer le son"></button>
     <button id="bouton-lance" aria-label="Activer le lance-pierre"></button>
     <button id="bouton-compagnon" aria-label="Choisir un compagnon"></button>
-    <button id="bouton-fouille" aria-label="Façon de sortir les os"></button>
+    <button id="bouton-remonter" aria-label="Remonter à la surface (Atelier)"></button>
     <button id="bouton-reglages" aria-label="Réglages de démo"></button>
   </div>
 
@@ -60,6 +60,7 @@
       <button id="reglages-defaut">Valeurs par défaut</button>
       <button id="reglages-copier">Copier les valeurs</button>
     </div>
+    <label class="ligne-reglage"><span>Mode démo (tout amélioré + X-ray)</span><input type="checkbox" id="mode-demo"></label>
     <div class="pied-reglages"><button id="squelette-raz">Recommencer le squelette</button></div>
   </div>
   <!-- Déplacement : joystick (gauche / droite = marcher, vers le haut = sauter) -->
@@ -79,15 +80,10 @@
     <button data-main="pioche" aria-label="Pioche"></button>
     <button data-main="jet" aria-label="Jet d'énergie"></button>
     <button data-main="bombe" aria-label="Bombes"></button>
-    <button data-main="pic" aria-label="Pic de fouille"></button>
-    <button data-main="pinceau" aria-label="Pinceau"></button>
-  </div>
-
-  <!-- ESSAI : gros plan de fouille (un os du mur du fond, vu de près) -->
-  <div id="gros-plan" hidden>
-    <div class="gp-tete"><b id="gp-nom">Os</b><span id="gp-pct">0 %</span><button id="gp-fermer" aria-label="Fermer">✕</button></div>
-    <canvas id="gp-toile"></canvas>
-    <div class="gp-outils"><button data-gp="pic" class="actif">Pic</button><button data-gp="pinceau">Pinceau</button></div>
+    <button data-main="pic" aria-label="Pic : fouille grossière"></button>
+    <button data-main="karcher" aria-label="Karcher : détartrage"></button>
+    <button data-main="grattoir" aria-label="Grattoir : détourage"></button>
+    <button data-main="polir" aria-label="Polir"></button>
   </div>
 
   <!-- Zoom (on peut aussi pincer à deux doigts) -->
@@ -99,6 +95,15 @@
   <!-- Profondeur et version, discrètes en haut au milieu -->
   <div id="profondeur">0 m</div>
   <div id="version"></div>
+  <!-- ESSAI : bonus en cours (capsules) -->
+  <div id="bonus"></div>
+
+  <!-- ESSAI : Atelier (à la surface) -->
+  <div id="atelier" hidden>
+    <div class="tete-reglages"><b>Atelier</b><span id="atelier-pieces"></span><button id="atelier-fermer" aria-label="Fermer">✕</button></div>
+    <div id="atelier-liste"></div>
+    <div class="pied-reglages"><button id="atelier-descendre">Redescendre</button></div>
+  </div>
 
   <script src="app.js"></script>
 </body>

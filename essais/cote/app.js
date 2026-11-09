@@ -33,13 +33,15 @@ const VIDE = 0, TERRE = 1, ARGILE = 2, BASALTE = 3, SABLE = 4,
       GRAVIER = 12,   // (seulement un mini-objet : les éclats d'un cristal cassé)
       // Roches dures, mélangées dans chaque couche (de plus en plus nombreuses en descendant)
       CAILLOU = 13, SCHISTE = 14, OBSIDIENNE = 15,
-      EBOULIS = 16;   // roche détachée qui s'écroule (tombe comme du sable)
+      EBOULIS = 16,   // roche détachée qui s'écroule (tombe comme du sable)
+      ECHAF = 17,     // planche d'échafaudage (posée toute seule sous un os)
+      CAPSULE = 18;   // capsule d'amélioration cachée dans la roche
 
 // Dureté de chaque matière : nombre de « coups » (× le réglage « coups pour la terre »)
 const RES = [];
 RES[TERRE] = 1; RES[ARGILE] = 2; RES[BASALTE] = 4; RES[SABLE] = 0.5;
 RES[CUIVRE] = 3; RES[OR] = 4; RES[CRISTAL] = 3; RES[FOSSILE] = 3; RES[RECHARGE] = 1.5;
-RES[CAILLOU] = 4; RES[SCHISTE] = 7; RES[OBSIDIENNE] = 12; RES[EBOULIS] = 0.5;
+RES[CAILLOU] = 4; RES[SCHISTE] = 7; RES[OBSIDIENNE] = 12; RES[EBOULIS] = 0.5; RES[ECHAF] = 0.5; RES[CAPSULE] = 2;
 
 // ---------- Réglages de DÉMO (curseurs du panneau « réglages ») ----------
 // Chaque réglage : valeur par défaut, minimum, maximum, pas, nom affiché, unité.
@@ -82,10 +84,10 @@ const COUL_COUCHE = [null, [112, 76, 50], [170, 86, 54], [56, 46, 70]];
 const COUL_SOCLE = [34, 31, 38];
 const COUL = [];
 COUL[CUIVRE] = [226, 148, 92]; COUL[OR] = [236, 196, 80]; COUL[CRISTAL] = [160, 226, 242];
-COUL[FOSSILE] = [234, 222, 196]; COUL[RECHARGE] = [126, 226, 160];
+COUL[FOSSILE] = [234, 222, 196]; COUL[RECHARGE] = [126, 226, 160]; COUL[CAPSULE] = [178, 132, 255];
 // Roches dures : chacune sa couleur, pour savoir d'un coup d'œil ce qui va résister
 const COUL_ROCHE = [];
-COUL_ROCHE[CAILLOU] = [124, 116, 108]; COUL_ROCHE[SCHISTE] = [98, 56, 50]; COUL_ROCHE[OBSIDIENNE] = [40, 30, 52];
+COUL_ROCHE[CAILLOU] = [124, 116, 108]; COUL_ROCHE[SCHISTE] = [98, 56, 50]; COUL_ROCHE[OBSIDIENNE] = [40, 30, 52]; COUL_ROCHE[ECHAF] = [172, 118, 66];
 // Teinte « bougie douce » (rouge, vert, bleu) appliquée à la lumière
 const TEINTE = [1.06, 0.93, 0.79];
 
@@ -247,6 +249,7 @@ function genererMonde() {
     for (let y = solY[x]; y < solY[x] + 8 * E && y < PROF; y++) revele[idx(x, y)] = 255; // le haut du sol est déjà vu (lumière du jour)
   }
   placerSquelette(); // ESSAI : les os géants dans le mur du fond
+  placerCapsules();  // ESSAI : capsules d'amélioration
   // DÉMO : quelques cristaux enfouis tout près du départ (à dégager puis détacher doucement)
   [[-18, 8], [20, 10], [-4, 22], [12, 30], [-24, 26], [26, 24]].forEach(([dx, dy], k) => placerCristal(DEPART_X + dx * E, DEPART_Y + dy * E, alea, k % 2 ? "fossile" : "cristal")); // DÉMO : cristaux et fossiles tout près
   // Les poches d'eau sont pleines
@@ -741,7 +744,7 @@ function calculerLumiere() {
       const lx = k % LW, ly = (k / LW) | 0;
       const t = typeA(lx + lumOx, ly + lumOy);
       // Pas tout droit = 2, pas en diagonale = 3 (≈ 2 × 1,4) : la lumière fait un rond, pas un losange
-      const m = t === VIDE ? 1 : (t === EAU || t === CRISTAL) ? 2 : 5; // (le cristal laisse un peu passer la lumière)
+      const m = t === VIDE || t === ECHAF ? 1 : (t === EAU || t === CRISTAL) ? 2 : 5; // (le cristal laisse un peu passer la lumière)
       const nc = c + 2 * m, nd = c + 3 * m;
       if (nc > LR) continue;
       const g = lx > 0, dr = lx < LW - 1, h = ly > 0, b = ly < LW - 1;
@@ -808,7 +811,7 @@ const BUDGET_ENERGIE = 2600 * E * E;   // « points de dureté » qu'on peut cre
 let energie = 1, expeditionFinie = false, extinction = 0;
 function depenser(points) {
   if (expeditionFinie) return;
-  energie = Math.max(0, energie - points / BUDGET_ENERGIE);
+  // ESSAI : plus de timer, la lampe ne s'use plus
 }
 
 // ---------- Gros cristaux ----------
@@ -1029,24 +1032,38 @@ function gratterCristal(c) {
 // ESSAI « fouille de côté » : os géants dans le mur du fond
 // Le mur du fond = la paroi qu'on voit derrière les galeries creusées.
 // Des os géants (environ 4 fois le mineur) y sont incrustés. On creuse la roche
-// de devant comme avant ; quand un os apparaît dans le mur, on le dégage :
-//   - le pic enlève la terre (on devine la bosse → l'os apparaît, encore sale),
-//   - le pinceau le nettoie (os sale → os propre),
-//   - la pioche et les bombes, elles, le fêlent (intact → fêlé → abîmé, jamais perdu).
-// Deux façons de le sortir (bouton loupe) : « sur place » (il faut dégager tout l'os
-// dans la galerie) ou « gros plan » (on touche l'os : un écran de fouille s'ouvre).
+// de devant comme avant ; quand un os apparaît dans le mur, on le déterre en 4 étapes,
+// avec un outil par étape :
+//   1. Grossier  (pic)      : on enlève la terre, la forme de l'os apparaît sous une croûte,
+//   2. Karcher   (karcher)  : le jet d'eau fait partir la croûte,
+//   3. Détourage (grattoir) : on dégage la terre collée tout autour de l'os,
+//   4. Polir     (polir)    : on gratte doucement jusqu'à ce qu'il brille.
+// La pioche, les bombes et le pic (sur un os déjà dégagé) le fêlent : intact → fêlé → abîmé.
+// Des planches (échafaudage) se posent toutes seules sous l'os pour rester à sa hauteur.
 // =========================================================
-const osDe = new Int16Array(N).fill(-1);   // numéro de l'os incrusté derrière chaque case (-1 = aucun)
-const couvert = new Uint8Array(N);          // 2 = encore dans la terre (relief), 1 = sale, 0 = propre
-const usureFond = new Float32Array(N);      // travail du pic / pinceau sur le mur du fond
+const osDe = new Int16Array(N).fill(-1);    // numéro de l'os incrusté derrière chaque case (-1 = aucun)
+const couvert = new Uint8Array(N);          // os : 3 = enterré (on devine sa bosse), 2 = croûte, 1 = mat, 0 = poli
+const gangue = new Uint8Array(N);           // tour de l'os : 1 = terre collée (à détourer), 0 = dégagé
+const gangueDe = new Int16Array(N).fill(-1);// à quel os appartient ce bout de tour
+const usureFond = new Float32Array(N);      // travail des outils de fouille sur le mur du fond
+const poteau = new Uint8Array(N);           // poteau d'échafaudage (simple décor : on passe devant)
 const OS = [];                              // les os placés dans cette mine
-let modeFouille = "place";                  // "place" (sur place) ou "gros" (gros plan)
-try { modeFouille = localStorage.getItem("tunnel-cote-mode") === "gros" ? "gros" : "place"; } catch (e) {}
 let collection = {};                        // os déjà sortis (gardés sur ce téléphone) : numéro → nombre de fêlures
 try { collection = JSON.parse(localStorage.getItem("tunnel-cote-squelette") || "{}") || {}; } catch (e) {}
 const sauverCollection = () => { try { localStorage.setItem("tunnel-cote-squelette", JSON.stringify(collection)); } catch (e) {} };
 const QUAL_OS = ["intact", "fêlé", "abîmé"];
 const qualiteOs = f => f === 0 ? 0 : f < 3 ? 1 : 2;
+const ETAPES = [
+  { nom: "Grossier", outil: "pic" },
+  { nom: "Karcher", outil: "karcher" },
+  { nom: "Détourage", outil: "grattoir" },
+  { nom: "Polir", outil: "polir" }
+];
+// Profondeur (en cases sous le départ) : la roche durcit, les os deviennent plus fragiles
+const profCases = y => Math.max(0, y - DEPART_Y);
+const durete = y => Math.pow(1.5, profCases(y) / (100 * E));   // roche ×1,5 tous les 200 cases
+const fragilite = y => 1 + profCases(y) / (250 * E);             // os profonds : se rayent plus vite
+
 
 // Les 9 pièces du squelette, dessinées avec des formes simples en petits pixels (4 par case).
 // Valeurs du masque : 1 = os, 2 = trou (orbite, fenêtre du crâne…), 3 = trait gravé (strie, suture).
@@ -1156,13 +1173,36 @@ function placerSquelette() {
         cases.push(idx(cx, cy));
       }
       if (!ok || !cases.length) continue;
-      const o = { n: OS.length, id, nom: PIECES_OS[id].nom, x: bx, y: by, w, h, W: f.w, H: f.h, pix, cases,
-        felures: 0, cd: 0, picT: 0, fini: false, fissures: new Set() };
-      for (const c of cases) { osDe[c] = o.n; couvert[c] = 2; }
+      const o = { n: OS.length, id, nom: PIECES_OS[id].nom, x: bx, y: by, w, h, W: f.w, H: f.h, pix, cases, tour: [],
+        etape: 0, felures: 0, cd: 0, picT: 0, fini: false, fissures: new Set(), planches: new Set(), poteaux: [], vu: false, av: 0 };
+      for (const c of cases) { osDe[c] = o.n; couvert[c] = 3; }
+      // Le tour de l'os (2 cases autour) : la terre collée qu'il faudra détourer
+      for (const c of cases) {
+        const x = c % LARG, y = (c / LARG) | 0;
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+          if (!dansMonde(x + dx, y + dy)) continue;
+          const j = idx(x + dx, y + dy);
+          if (osDe[j] === o.n || gangueDe[j] === o.n) continue;
+          gangue[j] = 1; gangueDe[j] = o.n; o.tour.push(j);
+        }
+      }
       OS.push(o);
       break;
     }
   });
+}
+
+// Capsules d'amélioration : rares, cachées dans la roche (violettes, elles scintillent)
+const capsulesMonde = [];
+function placerCapsules() {
+  for (let n = 0; n < 60; n++) {
+    const cx = Math.floor(entre(8, 248) * E), cy = Math.floor(DEPART_Y + entre(12, 700) * E);
+    let ok = true;
+    for (let dy = 0; dy < 3 && ok; dy++) for (let dx = 0; dx < 3; dx++) if (!dansMonde(cx + dx, cy + dy) || !rocheSimple(type[idx(cx + dx, cy + dy)])) { ok = false; break; }
+    if (!ok) continue;
+    for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 3; dx++) if (!((dx === 0 || dx === 2) && (dy === 0 || dy === 2))) type[idx(cx + dx, cy + dy)] = CAPSULE;
+    capsulesMonde.push(idx(cx + 1, cy + 1));
+  }
 }
 
 // Fêlure : petite fissure qui serpente dans l'os, autour de la case touchée
@@ -1185,96 +1225,247 @@ function chocOs(i, force) {
   const n = osDe[i];
   if (n < 0) return;
   const o = OS[n];
-  if (couvert[i] === 2) { couvert[i] = 1; if (force > 1 && Math.random() < 0.5) felerOs(o, i); }
+  if (couvert[i] === 3) { couvert[i] = 2; if (force > 1 && Math.random() < 0.5) felerOs(o, i); }
   else felerOs(o, i);
 }
 
-// Pic et pinceau sur le mur du fond (forcer = gros plan : la roche de devant ne compte pas)
-const picSurOs = new Set();
-function travaillerFond(px, py, r, quoi, dt, forcer, seul) {
-  let touche = false;
-  picSurOs.clear();
-  for (let y = Math.floor(py - r); y <= py + r; y++) for (let x = Math.floor(px - r); x <= px + r; x++) {
-    if (!dansMonde(x, y) || Math.hypot(x + 0.5 - px, y + 0.5 - py) > r) continue;
-    const i = idx(x, y), n = osDe[i];
-    if (n < 0 || (seul !== undefined && n !== seul)) continue;
-    if (!forcer && type[i] !== VIDE && type[i] !== EAU) continue;
-    touche = true;
-    const c = couvert[i];
-    if (quoi === "pic") {
-      if (c === 2) { usureFond[i] += dt * 2.4; if (usureFond[i] >= 1) { usureFond[i] = 0; couvert[i] = 1; if (!forcer) poussiere(x, y, COUL_COUCHE[couche[i]]); } }
-      else if (c === 1) { usureFond[i] += dt * 0.6; if (usureFond[i] >= 1) { usureFond[i] = 0; couvert[i] = 0; } }
-      else picSurOs.add(n);
-    } else {
-      if (c === 1) { usureFond[i] += dt * 2.8; if (usureFond[i] >= 1) { usureFond[i] = 0; couvert[i] = 0; if (!forcer && Math.random() < 0.5) poussiere(x, y, [236, 226, 200]); } }
-      else if (c === 2) { usureFond[i] += dt * 0.35; if (usureFond[i] >= 1) { usureFond[i] = 0; couvert[i] = 1; } }
+// ---------- Les 4 étapes de la fouille ----------
+const OUTILS_FOUILLE = { pic: { r: 1.3, v: 1.4 }, karcher: { r: 2.3, v: 0.8 }, grattoir: { r: 1.7, v: 1.4 }, polir: { r: 1.8, v: 0.9 } };
+// Avancement de l'étape en cours (0 à 1)
+function avancement(o) {
+  if (o.etape >= 4) return 1;
+  let n = 0;
+  if (o.etape === 2) { for (const c of o.tour) if (!gangue[c]) n++; return n / Math.max(1, o.tour.length); }
+  const seuil = o.etape === 0 ? 2 : o.etape === 1 ? 1 : 0;
+  for (const c of o.cases) if (couvert[c] <= seuil) n++;
+  return n / o.cases.length;
+}
+let derniereNote = 0;
+function noteFouille(o) { // petit « tic » qui monte avec l'avancement : très satisfaisant en série
+  const t = performance.now();
+  if (t - derniereNote < 45) return;
+  derniereNote = t;
+  bip(420 + avancement(o) * 900, 0.05, 0.022, "triangle");
+}
+// Le doigt fait travailler un outil de fouille sur le mur du fond (là où la roche de devant a disparu)
+function fouiller(px, py, quoi, dt) {
+  const R = OUTILS_FOUILLE[quoi].r * E, v = OUTILS_FOUILLE[quoi].v * (bonus.frenesie > 0 ? 2 : 1);
+  let travail = false;
+  const raye = new Set();
+  for (let y = Math.floor(py - R); y <= py + R; y++) for (let x = Math.floor(px - R); x <= px + R; x++) {
+    if (!dansMonde(x, y) || Math.hypot(x + 0.5 - px, y + 0.5 - py) > R) continue;
+    const i = idx(x, y);
+    if (type[i] !== VIDE && type[i] !== EAU) continue;   // caché par la roche de devant
+    const n = osDe[i];
+    if (n >= 0) {
+      const o = OS[n], c = couvert[i];
+      let suivant = -1;
+      if (quoi === "pic" && c === 3) suivant = 2;
+      else if (quoi === "karcher" && c === 2) suivant = 1;
+      else if (quoi === "polir" && c === 1) suivant = 0;
+      else if (quoi === "pic" && c <= 1) raye.add(n); // le pic sur un os déjà dégagé : il le raye
+      if (suivant < 0) continue;
+      travail = true;
+      usureFond[i] += dt * v;
+      if (usureFond[i] >= 1) {
+        usureFond[i] = 0; couvert[i] = suivant; noteFouille(o);
+        if (quoi === "pic") { if (Math.random() < 0.5) eclats(x, y, COUL_COUCHE[couche[i]], 2); }
+        else if (quoi === "karcher") { if (Math.random() < 0.4) particules.push({ x: x + 0.5, y: y + 0.5, vx: (Math.random() - 0.5) * 12 * E, vy: -Math.random() * 10 * E, vie: 0.4, coul: "rgb(150,110,80)", eclat: true }); }
+        else if (Math.random() < 0.3) particules.push({ x: x + 0.5, y: y + 0.5, vx: (Math.random() - 0.5) * 6 * E, vy: -6 * E, vie: 0.5, coul: "rgb(255,250,225)", eclat: true, flotte: true });
+      }
+    } else if (quoi === "grattoir" && gangue[i]) {
+      const o = OS[gangueDe[i]];
+      if (!o || o.fini) continue;
+      travail = true;
+      usureFond[i] += dt * v;
+      if (usureFond[i] >= 1) { usureFond[i] = 0; gangue[i] = 0; noteFouille(o); if (Math.random() < 0.5) poussiere(x, y, COUL_COUCHE[couche[i]]); }
     }
   }
-  // Le pic qui insiste sur un os déjà propre finit par le rayer
-  for (const n of picSurOs) { const o = OS[n]; o.picT += dt; if (o.picT > 1.3) { o.picT = 0; felerOs(o, idx(Math.floor(px), Math.floor(py))); } }
-  return touche;
+  for (const n of raye) { const o = OS[n]; o.picT += dt; if (o.picT > 1.3 / fragilite(o.y)) { o.picT = 0; felerOs(o, idx(Math.floor(px), Math.floor(py))); } }
+  return travail;
+}
+// Étape finie (on laisse quelques % de côté : le reste part tout seul)
+function finirEtape(o) {
+  if (o.etape === 0) for (const c of o.cases) couvert[c] = Math.min(couvert[c], 2);
+  else if (o.etape === 1) for (const c of o.cases) couvert[c] = Math.min(couvert[c], 1);
+  else if (o.etape === 2) for (const c of o.tour) gangue[c] = 0;
+  else for (const c of o.cases) couvert[c] = 0;
+  o.etape++;
+  const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+  if (o.etape >= 4) { extraireOs(o); return; }
+  gerbe(cx, cy, "rgb(255,236,190)", Math.round(14 * REG.jus));
+  bulle(0, 1, ETAPES[o.etape].nom + " !");
+  [660, 880].forEach((f, k) => setTimeout(() => bip(f, 0.18, 0.04, "triangle"), k * 80));
+  vibrer(20); secouer(1);
 }
 
-// Toutes les cases de l'os sont à nu (rien devant) et propres : il se détache
-let horlogeOs = 0;
+// ---------- Échafaudage automatique ----------
+// Dès qu'une partie de l'os est visible, des planches se posent sous lui (une seule fois par case :
+// si on les casse, elles ne reviennent pas). Des poteaux (décor) descendent jusqu'au sol.
+function poserEchafaudage(o) {
+  const yP = o.y + o.h + 2; // (sous le tour de l'os, pour ne pas cacher la terre à détourer)
+  const m = mineur;
+  for (let x = o.x - 2; x <= o.x + o.w + 1; x++) {
+    if (!dansMonde(x, yP)) continue;
+    const i = idx(x, yP);
+    if (o.planches.has(i) || type[i] !== VIDE) continue;
+    if (x >= Math.floor(m.x) - 1 && x <= m.x + LM && yP >= m.y - HM - 1 && yP <= m.y) continue; // pas dans le mineur
+    type[i] = ECHAF; usure[i] = 0; o.planches.add(i); lumiereSale = true;
+  }
+  // Poteaux : sous les deux bouts et au milieu, jusqu'au sol
+  for (const px of [o.x - 1, o.x + (o.w >> 1), o.x + o.w]) {
+    if (!dansMonde(px, yP) || type[idx(px, yP)] !== ECHAF) continue;
+    for (let y = yP + 1; y < yP + 80 * E && dansMonde(px, y); y++) {
+      const i = idx(px, y), j = idx(px + 1, y);
+      if (type[i] !== VIDE && type[i] !== EAU) break;
+      if (!poteau[i]) { poteau[i] = 1; o.poteaux.push(i); }
+      if (dansMonde(px + 1, y) && (type[j] === VIDE || type[j] === EAU) && !poteau[j]) { poteau[j] = 1; o.poteaux.push(j); }
+    }
+  }
+}
+
+// Vérifications régulières : os visibles, échafaudages, étapes finies, outil conseillé
+let horlogeOs = 0, outilConseille = null;
 function majOsFond(dt) {
   for (const o of OS) o.cd = Math.max(0, o.cd - dt);
   horlogeOs -= dt;
   if (horlogeOs > 0) return;
-  horlogeOs = 0.25;
+  horlogeOs = 0.2;
+  let proche = null, dProche = 1e9;
   for (const o of OS) {
-    if (o.fini || o === grosPlan.os) continue;
-    let ok = true;
-    for (const c of o.cases) if (couvert[c] !== 0 || (type[c] !== VIDE && type[c] !== EAU)) { ok = false; break; }
-    if (ok) extraireOs(o, false);
+    if (o.fini) continue;
+    let vis = 0;
+    for (const c of o.cases) if (type[c] === VIDE || type[c] === EAU) vis++;
+    o.vu = vis > 0;
+    if (!o.vu) continue;
+    poserEchafaudage(o);
+    o.av = avancement(o);
+    if (o.av >= 0.96) finirEtape(o);
+    const d = Math.hypot(o.x + o.w / 2 - centreMineurX(), o.y + o.h / 2 - centreMineurY());
+    if (d < dProche && d < 45 * E) { dProche = d; proche = o; }
   }
+  const conseil = proche && !proche.fini ? ETAPES[proche.etape].outil : null;
+  if (conseil !== outilConseille) { outilConseille = conseil; majBoutonsMain(); }
 }
 
-// L'os sort du mur : il tombe dans la galerie (ou à côté du mineur en gros plan) et l'aimant l'attire
-function extraireOs(o, pres) {
+// L'os est déterré : il se détache du mur, tombe dans la galerie et l'aimant l'attire
+function extraireOs(o) {
   o.fini = true;
   for (const c of o.cases) { osDe[c] = -1; couvert[c] = 0; }
+  for (const c of o.tour) { gangue[c] = 0; if (gangueDe[c] === o.n) gangueDe[c] = -1; }
+  for (const i of o.planches) if (type[i] === ECHAF) { type[i] = VIDE; reveiller(i % LARG, (i / LARG) | 0); }
+  for (const i of o.poteaux) poteau[i] = 0;
+  lumiereSale = true;
   const q = qualiteOs(o.felures);
   const pix = o.pix.map((col, k) => col && col !== ENCRE && o.fissures.has(k) ? [col[0] * 0.35, col[1] * 0.3, col[2] * 0.28] : col);
   const dessin = { id: 5000 + o.n, sorte: "os", nom: o.nom + " · " + QUAL_OS[q], W: o.W, H: o.H, pix, fissure: 0, x: o.x, y: o.y, w: o.w, h: o.h, vivant: true };
-  const x = pres ? centreMineurX() + mineur.sens * 4 * E : o.x + o.w / 2, y = pres ? centreMineurY() - 2 * E : o.y + o.h / 2;
+  const x = o.x + o.w / 2, y = o.y + o.h / 2;
   objets.push({ x, y, vx: 0, vy: -10 * E, t: FOSSILE, c: 1, n: 1, repos: false, dessin, os: o });
-  gerbe(x, y, "rgb(255,236,190)", Math.round(30 * REG.jus));
+  gerbe(x, y, "rgb(255,236,190)", Math.round(36 * REG.jus));
   anneaux.push({ x, y, age: 0, coul: "255,236,190" });
-  secouer(4); vibrer(40);
+  secouer(5); vibrer(40);
   [523, 659, 784, 1047].forEach((f, k) => setTimeout(() => bip(f, 0.4, 0.05, "triangle"), k * 70));
 }
 
-// ---------- ESSAI : outils (pioche, jet, bombes, pic, pinceau) ----------
+// ---------- ESSAI : progression (Atelier, capsules, mode démo) ----------
+const ATELIER = [
+  { cle: "pForce", nom: "Pioche · force", d: "Casse la roche dure", base: 120 },
+  { cle: "pTaille", nom: "Pioche · taille", d: "Coups plus larges", base: 100 },
+  { cle: "lReserve", nom: "Laser · réserve", d: "Tire plus longtemps", base: 110 },
+  { cle: "lRecharge", nom: "Laser · recharge", d: "Revient plus vite", base: 90 },
+  { cle: "lForce", nom: "Laser · force", d: "Ronge plus vite", base: 110 }
+];
+const NIV_MAX = 5;
+const prixA = (a, n) => Math.round(a.base * Math.pow(1.9, n) / 10) * 10;
+let progres = { niv: {}, pieces: 0, demo: false };
+try { const s = JSON.parse(localStorage.getItem("tunnel-cote-atelier") || "{}"); if (s.niv) progres.niv = s.niv; progres.pieces = s.pieces || 0; progres.demo = !!s.demo; } catch (e) {}
+const sauverProgres = () => { try { localStorage.setItem("tunnel-cote-atelier", JSON.stringify(progres)); } catch (e) {} };
+const nivA = cle => progres.demo ? NIV_MAX : (progres.niv[cle] || 0);
+// Valeur du butin en pièces (quand on remonte)
+const VALEUR = { [TERRE]: 0.05, [SABLE]: 0.03, [EBOULIS]: 0.03, [ARGILE]: 0.1, [BASALTE]: 0.2, [CAILLOU]: 0.15, [SCHISTE]: 0.3, [OBSIDIENNE]: 0.6,
+  [CUIVRE]: 1, [OR]: 3, [CRISTAL]: 25, [FOSSILE]: 15, [GRAVIER]: 0.3 };
+// Bonus temporaires (capsules)
+const bonus = { frenesie: 0, turbo: 0, explosions: 0, xray: 0 };
+const NOMS_BONUS = { frenesie: "Frénésie", turbo: "Turbo laser", explosions: "Explosions", xray: "X-ray" };
+const forcePioche = () => 0.75 * (1 + 0.35 * nivA("pForce")) * (bonus.frenesie > 0 ? 3 : 1);
+const taillePioche = () => 1 + 0.15 * nivA("pTaille");
+const xray = () => progres.demo || bonus.xray > 0;
+function ouvrirCapsule() {
+  const tirage = Math.random() * 100;
+  let nom;
+  if (tirage < 6) { // Pièce d'Atelier : une amélioration permanente gratuite
+    const libres = ATELIER.filter(a => (progres.niv[a.cle] || 0) < NIV_MAX);
+    if (libres.length) { const a = libres[(Math.random() * libres.length) | 0]; progres.niv[a.cle] = (progres.niv[a.cle] || 0) + 1; sauverProgres(); majStatsLaser(); nom = "Pièce d'Atelier : " + a.nom; }
+    else nom = "Frénésie", bonus.frenesie = 25;
+  }
+  else if (tirage < 30) { bonus.frenesie = 25; nom = "Frénésie !"; }
+  else if (tirage < 50) { bonus.turbo = 20; nom = "Turbo laser !"; }
+  else if (tirage < 70) { bonus.explosions = 20; nom = "Explosions !"; }
+  else if (tirage < 85) { lancerForeuse(); nom = "Foreuse !"; }
+  else { bonus.xray = 30; nom = "X-ray !"; }
+  bulle(0, 1, nom);
+  gerbe(centreMineurX(), centreMineurY(), "rgb(200,160,255)", Math.round(30 * REG.jus));
+  anneaux.push({ x: centreMineurX(), y: centreMineurY(), age: 0, coul: "200,160,255" });
+  [700, 940, 1250].forEach((f, k) => setTimeout(() => bip(f, 0.2, 0.05, "triangle"), k * 60));
+  secouer(2); vibrer(30);
+}
+const affBonus = document.getElementById("bonus");
+let texteBonus = "";
+function majBonus(dt) {
+  let t = [];
+  for (const k in bonus) if (bonus[k] > 0) { bonus[k] = Math.max(0, bonus[k] - dt); t.push(NOMS_BONUS[k] + " " + Math.ceil(bonus[k]) + " s"); }
+  if (progres.demo) t.unshift("Démo");
+  const s = t.join(" · ");
+  if (s !== texteBonus) { texteBonus = s; affBonus.textContent = s; }
+}
+
+// ---------- ESSAI : outils (pioche, jet, bombes, pic, karcher, grattoir, polir) ----------
 let outilMain = "pioche";
 try { outilMain = localStorage.getItem("tunnel-cote-outil") || "pioche"; } catch (e) {}
-let jet = null, flash = 0, stockBombes = 12;
+if (!["pioche", "jet", "bombe", "pic", "karcher", "grattoir", "polir"].includes(outilMain)) outilMain = "pioche";
+let jet = null, flash = 0, stockBombes = 6, visee = { dx: 1, dy: 0 };
 const bombes = [];
 const mainX = () => centreMineurX() + mineur.sens * 1.2 * E, mainY = () => mineur.y - HM * 0.45;
 
+// Laser : une réserve d'énergie qui se recharge toute seule (lentement) quand on ne tire pas
+const laser = { e: 3, max: 3, regen: 0.25, force: 6, repos: 0 };
+function majStatsLaser() {
+  laser.max = 3 * (1 + 0.4 * nivA("lReserve"));
+  laser.regen = 0.25 * (1 + 0.4 * nivA("lRecharge"));
+  laser.force = 6 * (1 + 0.35 * nivA("lForce"));
+  laser.e = Math.min(laser.e, laser.max);
+}
+function majLaser(dt) {
+  laser.repos += dt;
+  if (laser.repos > 0.6) laser.e = Math.min(laser.max, laser.e + laser.regen * dt);
+}
+
 // Jet d'énergie : un gros rayon qui part de la main du mineur vers le doigt et ronge la roche qu'il touche
 function majJet(bx, by, dtj) {
-  if (expeditionFinie || energie <= 0) return;
+  const turbo = bonus.turbo > 0;
+  laser.repos = 0;
+  if (!turbo && laser.e <= 0) { if (Math.random() < 0.1) bip(160, 0.05, 0.02, "square"); return; } // vide : ça crachote
+  if (!turbo) laser.e = Math.max(0, laser.e - dtj);
   const hx = mainX(), hy = mainY();
   let dx = bx - hx, dy = by - hy; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
   const portee = REG.portee * 1.2;
   let fin = portee, frappe = null;
   for (let s = 0; s < portee; s += 0.5) {
-    const x = hx + dx * s, y = hy + dy * s;
-    if (solide(Math.floor(x), Math.floor(y))) { fin = s; frappe = [x + dx * 0.8, y + dy * 0.8]; break; }
+    const x = hx + dx * s, y = hy + dy * s, t = typeA(Math.floor(x), Math.floor(y));
+    if (t !== VIDE && t !== EAU && t !== ECHAF) { fin = s; frappe = [x + dx * 0.8, y + dy * 0.8]; break; }
   }
-  jet = { x0: hx, y0: hy, x1: hx + dx * fin, y1: hy + dy * fin };
+  jet = { x0: hx, y0: hy, x1: hx + dx * fin, y1: hy + dy * fin, turbo };
   if (!frappe) return;
-  const R = 1.7 * E;
+  const R = 1.7 * E * (turbo ? 1.6 : 1), F = laser.force * (turbo ? 2.5 : 1);
   let casses = 0, mat = 0;
   for (let y = Math.floor(frappe[1] - R); y <= frappe[1] + R; y++) for (let x = Math.floor(frappe[0] - R); x <= frappe[0] + R; x++) {
     const d = Math.hypot(x + 0.5 - frappe[0], y + 0.5 - frappe[1]);
     if (d > R || !dansMonde(x, y)) continue;
     const i = idx(x, y), t = type[i];
-    if (t === VIDE || t === EAU || t === SOCLE || cristalDe[i] >= 0) continue;
+    if (t === VIDE || t === EAU || t === SOCLE || t === ECHAF || cristalDe[i] >= 0) continue;
     if (!mat || RES[t] > RES[mat]) mat = t;
-    usure[i] += dtj * 10 * (1 - d / R * 0.5);
-    if (usure[i] >= pvMax(t)) { depenser(RES[t]); eclats(x, y, couleurCase(x, y, t), RES[t]); detruire(x, y); casses++; abimes.delete(i); }
+    usure[i] += dtj * F * (1 - d / R * 0.5);
+    if (usure[i] >= pvMax(t, y)) { eclats(x, y, couleurCase(x, y, t), RES[t]); detruire(x, y); casses++; abimes.delete(i); }
     else abimes.set(i, horlogeJeu);
   }
   matiereGrattee = mat;
@@ -1286,9 +1477,18 @@ function majJet(bx, by, dtj) {
   }
 }
 
+// Karcher : le jet d'eau part de la main (gouttelettes) et fait le travail de fouille
+function arroser(bx, by) {
+  const hx = mainX(), hy = mainY(), dx = bx - hx, dy = by - hy;
+  if (particules.length < 250) for (let k = 0; k < 3; k++) {
+    const t = 0.15 + Math.random() * 0.1;
+    particules.push({ x: hx, y: hy, vx: dx / t + (Math.random() - 0.5) * 8 * E, vy: dy / t + (Math.random() - 0.5) * 8 * E, vie: t, coul: Math.random() < 0.5 ? "rgb(170,215,245)" : "rgb(230,245,255)", flotte: true });
+  }
+}
+
 // Bombes : lancées vers le doigt, elles rebondissent puis explosent
 function lancerBombe(bx, by) {
-  if (stockBombes <= 0 || expeditionFinie) return;
+  if (stockBombes <= 0) { bip(160, 0.08, 0.03, "square"); return; }
   stockBombes--; majBoutonsMain();
   const hx = centreMineurX(), hy = centreMineurY() - E;
   const dx = bx - hx, dy = by - hy, d = Math.hypot(dx, dy) || 1, v = Math.min(80 * E, 12 * E + d * 2.4);
@@ -1305,45 +1505,69 @@ function majBombes(dtj) {
     const ny = b.y + b.vy * dtj;
     if (solide(Math.floor(b.x), Math.floor(ny))) { b.vy *= -0.4; b.vx *= 0.7; } else b.y = ny;
     if (Math.random() < 0.5 && particules.length < 250) particules.push({ x: b.x, y: b.y - 0.8 * E, vx: (Math.random() - 0.5) * 6 * E, vy: -6 * E, vie: 0.2, coul: "rgb(255,220,130)", eclat: true, flotte: true });
-    if (b.t <= 0) { bombes.splice(k, 1); exploser(b.x, b.y); }
+    if (b.t <= 0) { bombes.splice(k, 1); exploser(b.x, b.y, 7 * E); }
   }
 }
-function exploser(x, y) {
-  const R = 7 * E, touches = new Map();
+function exploser(x, y, R) {
+  const petite = R < 5 * E, touches = new Map();
   for (let cy = Math.floor(y - R * 1.2); cy <= y + R * 1.2; cy++) for (let cx = Math.floor(x - R * 1.2); cx <= x + R * 1.2; cx++) {
     if (!dansMonde(cx, cy)) continue;
     const d = Math.hypot(cx + 0.5 - x, cy + 0.5 - y);
     if (d > R * (0.82 + 0.3 * hache(cx, cy, 5))) continue; // bord déchiqueté
     const i = idx(cx, cy), t = type[i];
-    if (osDe[i] >= 0) { const n = osDe[i]; if (!touches.has(n) || touches.get(n).d > d) touches.set(n, { i, d }); couvert[i] = Math.min(couvert[i], 1); }
+    if (osDe[i] >= 0) { const n = osDe[i]; if (!touches.has(n) || touches.get(n).d > d) touches.set(n, { i, d }); couvert[i] = Math.min(couvert[i], 2); }
     if (t === VIDE || t === EAU || t === SOCLE || cristalDe[i] >= 0) continue;
-    depenser(RES[t] * 0.3);
-    if (Math.random() < 0.2) eclats(cx, cy, couleurCase(cx, cy, t), 3);
+    if (Math.random() < (petite ? 0.08 : 0.2)) eclats(cx, cy, couleurCase(cx, cy, t), 3);
     detruire(cx, cy);
   }
-  for (const [n, t] of touches) { const o = OS[n]; felerOs(o, t.i); if (t.d < R * 0.5) { o.cd = 0; felerOs(o, t.i); } }
-  secouer(9); flash = 0.55;
-  gerbe(x, y, "rgb(255,190,90)", Math.round(40 * REG.jus));
-  gerbe(x, y, "rgb(120,110,100)", Math.round(25 * REG.jus));
+  for (const [n, t] of touches) { const o = OS[n]; felerOs(o, t.i); if (!petite && t.d < R * 0.5) { o.cd = 0; felerOs(o, t.i); } }
+  secouer(petite ? 3 : 9); flash = Math.max(flash, petite ? 0.2 : 0.55);
+  gerbe(x, y, "rgb(255,190,90)", Math.round((petite ? 12 : 40) * REG.jus));
+  if (!petite) gerbe(x, y, "rgb(120,110,100)", Math.round(25 * REG.jus));
   anneaux.push({ x, y, age: 0, coul: "255,200,120" });
-  sonBoum();
-  try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate([60, 30, 130]); } catch (e) {}
+  sonBoum(petite);
+  if (!petite) try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate([60, 30, 130]); } catch (e) {}
   lumiereSale = true;
 }
-function sonBoum() {
+function sonBoum(petite) {
   if (!son.actif || !son.ctx) return;
   const a = son.ctx, t = a.currentTime, src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
-  src.buffer = son.bruit; f.type = "lowpass"; f.frequency.setValueAtTime(600, t); f.frequency.exponentialRampToValueAtTime(60, t + 0.8);
-  g.gain.setValueAtTime(0.6, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+  src.buffer = son.bruit; f.type = "lowpass"; f.frequency.setValueAtTime(petite ? 900 : 600, t); f.frequency.exponentialRampToValueAtTime(60, t + (petite ? 0.35 : 0.8));
+  g.gain.setValueAtTime(petite ? 0.3 : 0.6, t); g.gain.exponentialRampToValueAtTime(0.0001, t + (petite ? 0.4 : 0.9));
   src.connect(f).connect(g).connect(a.destination); src.start(t); src.stop(t + 0.95);
-  bip(60, 0.5, 0.25);
+  bip(petite ? 90 : 60, petite ? 0.25 : 0.5, petite ? 0.12 : 0.25);
+}
+
+// Foreuse (capsule) : elle part tout droit dans la direction visée et creuse tout sur son passage
+const foreuses = [];
+function lancerForeuse() {
+  const d = Math.hypot(visee.dx, visee.dy) || 1;
+  foreuses.push({ x: centreMineurX(), y: centreMineurY(), dx: visee.dx / d, dy: visee.dy / d, t: 4 });
+}
+function majForeuses(dtj) {
+  for (let k = foreuses.length - 1; k >= 0; k--) {
+    const f = foreuses[k];
+    f.t -= dtj;
+    f.x += f.dx * 22 * E * dtj; f.y += f.dy * 22 * E * dtj;
+    const R = 2.4 * E;
+    for (let y = Math.floor(f.y - R); y <= f.y + R; y++) for (let x = Math.floor(f.x - R); x <= f.x + R; x++) {
+      if (!dansMonde(x, y) || Math.hypot(x + 0.5 - f.x, y + 0.5 - f.y) > R) continue;
+      const i = idx(x, y), t = type[i];
+      if (t === VIDE || t === EAU || t === SOCLE || t === ECHAF || cristalDe[i] >= 0) continue;
+      if (Math.random() < 0.15) eclats(x, y, couleurCase(x, y, t), 2);
+      detruire(x, y);
+    }
+    secouer(0.8); vibrer(6);
+    if (Math.random() < 0.5) sonCoup(BASALTE);
+    if (f.t <= 0 || !dansMonde(Math.floor(f.x), Math.floor(f.y))) foreuses.splice(k, 1);
+  }
 }
 
 // ---------- ESSAI : destructions en chaîne ----------
 // Quand une case disparaît, on regarde si un morceau de roche voisin ne tient plus à rien :
 // un bloc détaché (moins de 140 cases, sans toucher le socle ni un trésor) s'écroule en éboulis.
 const aVerifier = new Set();
-const detachable = t => rocheSimple(t) || t === CUIVRE || t === OR || t === RECHARGE || t === SABLE || t === EBOULIS;
+const detachable = t => rocheSimple(t) || t === CUIVRE || t === OR || t === RECHARGE || t === SABLE || t === EBOULIS || t === CAPSULE;
 function noterVoisins(x, y) {
   if (aVerifier.size > 500) return;
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (dansMonde(x + dx, y + dy) && detachable(type[idx(x + dx, y + dy)])) aVerifier.add(idx(x + dx, y + dy));
@@ -1358,14 +1582,14 @@ function testerBloc(s) {
       if (j < 0 || j >= N || vus.has(j)) continue;
       const t = type[j];
       if (t === VIDE || t === EAU) continue;
-      if (!detachable(t)) return;            // il touche le socle, un trésor… : il tient
+      if (!detachable(t)) return;            // il touche le socle, un trésor, une planche… : il tient
       vus.add(j); pile.push(j);
       if (t !== EBOULIS) tousEboulis = false;
       if (vus.size > 140) return;            // trop gros : il tient
     }
   }
   if (tousEboulis) return;
-  for (const i of vus) { type[i] = EBOULIS; usure[i] = 0; sableActif.add(i); aVerifier.delete(i); }
+  for (const i of vus) { if (type[i] === CAPSULE) continue; type[i] = EBOULIS; usure[i] = 0; sableActif.add(i); aVerifier.delete(i); }
   const k = [...vus][0];
   secouer(1.2 + vus.size / 30); sonDanger(); vibrer(25);
   for (let n = 0; n < 6; n++) poussiere(k % LARG, (k / LARG) | 0, [180, 160, 140]);
@@ -1376,77 +1600,68 @@ function majEboulements() {
   for (const s of aVerifier) { aVerifier.delete(s); testerBloc(s); if (++n >= 25) break; }
 }
 
-// ---------- ESSAI : gros plan de fouille ----------
-const grosPlan = { os: null, outil: "pic", appui: false, x: 0, y: 0, marge: 3 };
-const gpBloc = document.getElementById("gros-plan"), gpToile = document.getElementById("gp-toile"), gpCtx = gpToile.getContext("2d");
-function ouvrirGrosPlan(o) {
-  grosPlan.os = o;
-  const cols = o.w + grosPlan.marge * 2, rows = o.h + grosPlan.marge * 2;
-  gpToile.width = cols * 4; gpToile.height = rows * 4;
-  const k = Math.min((Math.min(innerWidth, 420) - 24) / gpToile.width, (innerHeight * 0.5) / gpToile.height);
-  gpToile.style.width = Math.floor(gpToile.width * k) + "px"; gpToile.style.height = Math.floor(gpToile.height * k) + "px";
-  document.getElementById("gp-nom").textContent = o.nom;
-  gpBloc.hidden = false;
-  bip(700, 0.06, 0.04);
+// ---------- ESSAI : remonter à la surface, Atelier ----------
+let retour = null; // où on était avant de remonter (pour redescendre)
+function vendreButin() {
+  let total = 0;
+  for (const t in compteur) { total += (compteur[t] || 0) * (VALEUR[t] || 0); compteur[t] = 0; }
+  for (const t in lignesCompteur) { lignesCompteur[t].div.remove(); delete lignesCompteur[t]; }
+  total = Math.floor(total);
+  if (total > 0) { progres.pieces += total; sauverProgres(); bulle(0, 1, "+" + total + " pièces"); bip(1500, 0.1, 0.05); bip(2000, 0.15, 0.04); }
 }
-function fermerGrosPlan() { gpBloc.hidden = true; grosPlan.os = null; grosPlan.appui = false; }
-function versCaseGP(e) {
-  const r = gpToile.getBoundingClientRect(), o = grosPlan.os;
-  return [o.x - grosPlan.marge + (e.clientX - r.left) / r.width * (gpToile.width / 4), o.y - grosPlan.marge + (e.clientY - r.top) / r.height * (gpToile.height / 4)];
+function remonter() {
+  const m = mineur;
+  if (m.y > DEPART_Y + 4 * E) retour = { x: m.x, y: m.y };
+  for (let n = 0; n < 10; n++) poussiere(Math.floor(m.x + 1), Math.floor(m.y - 2), [255, 240, 200]);
+  m.x = DEPART_X; m.y = DEPART_Y; m.vx = 0; m.vy = 0; m.etat = "sol"; m.cible = null; m.ecrase = 0.8;
+  lumiereSale = true; decalX = 0; decalY = 0;
+  { const c = cibleCamera(); camX = c.x; camY = c.y; }
+  sonRetour(); vibrer(20);
+  vendreButin();
+  ouvrirAtelier(true);
 }
-gpToile.addEventListener("pointerdown", e => { if (!grosPlan.os) return; try { gpToile.setPointerCapture(e.pointerId); } catch (er) {} grosPlan.appui = true; [grosPlan.x, grosPlan.y] = versCaseGP(e); });
-gpToile.addEventListener("pointermove", e => { if (grosPlan.appui) [grosPlan.x, grosPlan.y] = versCaseGP(e); });
-for (const ev of ["pointerup", "pointercancel"]) gpToile.addEventListener(ev, () => { grosPlan.appui = false; });
-document.getElementById("gp-fermer").addEventListener("click", fermerGrosPlan);
-for (const b of document.querySelectorAll("[data-gp]")) b.addEventListener("click", () => {
-  grosPlan.outil = b.dataset.gp;
-  for (const x of document.querySelectorAll("[data-gp]")) x.classList.toggle("actif", x === b);
-});
-let gpSon = 0;
-function majGrosPlan(dt) {
-  const o = grosPlan.os;
-  if (!o) return;
-  if (grosPlan.appui) {
-    const r = grosPlan.outil === "pic" ? 1.1 * E : 2.2 * E;
-    if (travaillerFond(grosPlan.x, grosPlan.y, r, grosPlan.outil, dt, true, o.n)) {
-      gpSon -= dt;
-      if (gpSon <= 0) { gpSon = grosPlan.outil === "pic" ? 0.08 : 0.12; if (grosPlan.outil === "pic") sonCoup(FOSSILE); else bip(5200 + Math.random() * 800, 0.05, 0.01, "triangle"); vibrer(grosPlan.outil === "pic" ? 6 : 3); }
-    }
-  }
-  // dessin du gros plan : la terre du mur, la bosse de l'os, puis l'os (sale ou propre)
-  const W = gpToile.width, H = gpToile.height, img = gpCtx.createImageData(W, H), d = img.data;
-  const x0 = o.x - grosPlan.marge, y0 = o.y - grosPlan.marge;
-  let propres = 0;
-  for (const c of o.cases) if (couvert[c] === 0) propres++;
-  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
-    const cx = x0 + (px >> 2), cy = y0 + (py >> 2), k = (py * W + px) * 4;
-    const i = dansMonde(cx, cy) ? idx(cx, cy) : 0, P = COUL_COUCHE[couche[i] || 1];
-    const s = hache(cx * 4 + (px & 3), cy * 4 + (py & 3), 9);
-    let r = P[0] * 0.62, g = P[1] * 0.62, b = P[2] * 0.62, kk = s < 0.2 ? 0.85 : s > 0.85 ? 1.12 : 1;
-    if (osDe[i] === o.n && couvert[i] === 2) kk *= osDe[i - LARG] !== o.n ? 1.5 : osDe[i + LARG] !== o.n ? 0.62 : 1.1;
-    r *= kk; g *= kk; b *= kk;
-    const ox = (cx - o.x) * 4 + (px & 3), oy = (cy - o.y) * 4 + (py & 3);
-    const col = ox >= 0 && oy >= 0 && ox < o.W && oy < o.H ? o.pix[oy * o.W + ox] : null;
-    if (col && osDe[i] === o.n && couvert[i] < 2) {
-      if (col === ENCRE) { r = 29; g = 23; b = 38; }
-      else {
-        r = col[0]; g = col[1]; b = col[2];
-        if (o.fissures.has(oy * o.W + ox)) { r *= 0.35; g *= 0.3; b *= 0.28; }
-        if (couvert[i] === 1) { const a = s > 0.35 ? 0.7 : 0.35; r += (P[0] * 0.8 - r) * a; g += (P[1] * 0.8 - g) * a; b += (P[2] * 0.8 - b) * a; }
-      }
-    }
-    d[k] = r; d[k + 1] = g; d[k + 2] = b; d[k + 3] = 255;
-  }
-  gpCtx.putImageData(img, 0, 0);
-  // cercle de l'outil
-  if (grosPlan.appui) {
-    const r = (grosPlan.outil === "pic" ? 1.1 : 2.2) * E * 4;
-    gpCtx.strokeStyle = "rgba(255,240,215,0.7)"; gpCtx.lineWidth = 1;
-    gpCtx.beginPath(); gpCtx.arc((grosPlan.x - x0) * 4, (grosPlan.y - y0) * 4, r, 0, Math.PI * 2); gpCtx.stroke();
-  }
-  document.getElementById("gp-pct").textContent = Math.floor(propres / o.cases.length * 100) + " %" + (o.felures ? " · " + QUAL_OS[qualiteOs(o.felures)] : "");
-  if (propres === o.cases.length) { fermerGrosPlan(); extraireOs(o, true); }
+function redescendre() {
+  if (!retour) return;
+  mineur.x = retour.x; mineur.y = retour.y; mineur.etat = "air"; mineur.vx = 0; mineur.vy = 0;
+  retour = null; lumiereSale = true;
+  { const c = cibleCamera(); camX = c.x; camY = c.y; }
+  ouvrirAtelier(false); sonRetour();
 }
+const panneauAtelier = document.getElementById("atelier");
+function ouvrirAtelier(ouvert) {
+  panneauAtelier.hidden = !ouvert;
+  if (!ouvert) return;
+  ouvrirPanneau(false);
+  document.getElementById("atelier-pieces").textContent = nombre.format(progres.pieces) + " pièces";
+  const liste = document.getElementById("atelier-liste");
+  liste.innerHTML = "";
+  for (const a of ATELIER) {
+    const n = nivA(a.cle), max = n >= NIV_MAX, prix = prixA(a, n);
+    const ligne = document.createElement("div");
+    ligne.className = "atel-ligne";
+    ligne.innerHTML = `<span>${a.nom}<small>${a.d}</small></span><div class="pips">${Array.from({ length: NIV_MAX }, (_, k) => `<i class="${k < n ? "on" : ""}"></i>`).join("")}</div>` +
+      `<button ${max || progres.pieces < prix || progres.demo ? "disabled" : ""}>${max ? "max" : nombre.format(prix)}</button>`;
+    ligne.querySelector("button").addEventListener("click", () => {
+      if (progres.pieces < prix || max) return;
+      progres.pieces -= prix; progres.niv[a.cle] = n + 1; sauverProgres(); majStatsLaser();
+      bip(900, 0.1, 0.05); bip(1350, 0.15, 0.04); vibrer(15);
+      ouvrirAtelier(true);
+    });
+    liste.appendChild(ligne);
+  }
+  document.getElementById("atelier-descendre").hidden = !retour;
+}
+document.getElementById("atelier-fermer").addEventListener("click", () => ouvrirAtelier(false));
+document.getElementById("atelier-descendre").addEventListener("click", redescendre);
+// En marchant jusqu'à la surface, le butin est aussi vendu
+let horlogeSurface = 0;
+function majSurface(dt) {
+  horlogeSurface -= dt;
+  if (horlogeSurface > 0) return;
+  horlogeSurface = 0.5;
+  if (mineur.y <= DEPART_Y + E && mineur.etat === "sol") vendreButin();
+}
+
 
 // ---------- ESSAI : le squelette géant, monté à la surface ----------
 // Chaque pièce a sa place (centre en petits pixels depuis le coin haut-gauche, et son angle).
@@ -1484,10 +1699,12 @@ function dessinerSquelette(p) {
     cc.restore();
   });
 }
-
-// Os du mur du fond, dessinés finement (4 petits pixels par case), seulement là où la roche de devant a disparu
-function dessinerOsFond(p, net) {
+// Os du mur du fond, dessinés finement (4 petits pixels par case), là où la roche de devant a disparu.
+// Selon l'étape : croûte de terre (après le grossier), mat (après le karcher), brillant (poli).
+// X-ray : la silhouette des os encore cachés dans la roche apparaît en bleu.
+function dessinerOsFond(p, net, temps) {
   cc.imageSmoothingEnabled = false;
+  const rx = xray(), etincelle = Math.floor(temps * 6);
   for (const o of OS) {
     if (o.fini) continue;
     const ox = versEcranX(o.x), oy = versEcranY(o.y);
@@ -1501,7 +1718,12 @@ function dessinerOsFond(p, net) {
       d[k + 3] = 0;
       if (!col) continue;
       const cx = o.x + (px >> 2), cy = o.y + (py >> 2), i = idx(cx, cy), t = type[i];
-      if ((t !== VIDE && t !== EAU) || couvert[i] === 2 || osDe[i] !== o.n) continue; // caché par la roche de devant, ou encore dans la terre
+      if (osDe[i] !== o.n) continue;
+      const cache = (t !== VIDE && t !== EAU) || couvert[i] === 3;
+      if (cache) { // caché (roche devant, ou encore dans la terre) : seulement en X-ray
+        if (rx && col === ENCRE) { d[k] = 120; d[k + 1] = 230; d[k + 2] = 255; d[k + 3] = 150; visible = true; }
+        continue;
+      }
       const ci = (py >> 2) * o.w + (px >> 2);
       let L = o.L[ci]; if (L < 0) L = o.L[ci] = lumiereEn(cx, cy);
       if (L < 0.02) continue;
@@ -1509,11 +1731,14 @@ function dessinerOsFond(p, net) {
       if (col === ENCRE) { r = 29 * L; g = 23 * L; b = 38 * L; }
       else {
         r = col[0]; g = col[1]; b = col[2];
+        const s = hache(cx * 4 + (px & 3), cy * 4 + (py & 3), 31);
+        const c = couvert[i];
+        if (c === 2) { // croûte : plaques de terre collées
+          const P = COUL_COUCHE[couche[i]], a = hache((cx * 4 + px) >> 1, (cy * 4 + py) >> 1, 33) < 0.45 ? 0.8 : 0.25;
+          r += (P[0] * 0.95 - r) * a; g += (P[1] * 0.95 - g) * a; b += (P[2] * 0.95 - b) * a;
+        } else if (c === 1) { r *= 0.86; g *= 0.84; b *= 0.8; if (s < 0.08) { r *= 0.8; g *= 0.8; b *= 0.8; } } // mat, un peu terne
+        else if (hache(px + etincelle * 7, py + etincelle * 13, o.n) > 0.992) { r = 255; g = 255; b = 240; }     // poli : il brille
         if (o.fissures.has(py * o.W + px)) { r *= 0.35; g *= 0.3; b *= 0.28; }
-        if (couvert[i] === 1) { // sale : de la terre collée dessus
-          const P = COUL_COUCHE[couche[i]], a = hache(cx * 4 + (px & 3), cy * 4 + (py & 3), 31) > 0.35 ? 0.7 : 0.35;
-          r += (P[0] * 0.8 - r) * a; g += (P[1] * 0.8 - g) * a; b += (P[2] * 0.8 - b) * a;
-        }
         r *= L * TEINTE[0]; g *= L * TEINTE[1]; b *= L * TEINTE[2];
       }
       d[k] = r; d[k + 1] = g; d[k + 2] = b; d[k + 3] = 255; visible = true;
@@ -1522,19 +1747,36 @@ function dessinerOsFond(p, net) {
     o.g.putImageData(o.im, 0, 0);
     cc.drawImage(o.can, net(ox), net(oy), o.W * p, o.H * p);
   }
+  // Jauge au-dessus de chaque os commencé : nom de l'étape, %, barre et 4 crans
+  cc.textAlign = "center"; cc.textBaseline = "alphabetic";
+  for (const o of OS) {
+    if (o.fini || !o.vu) continue;
+    const cx = versEcranX(o.x + o.w / 2);
+    let cy = versEcranY(o.y) - 12;
+    if (cx < -60 || cx > innerWidth + 60 || cy < -40 || cy > innerHeight + 40) continue;
+    cy = Math.max(70, cy);
+    const L = 112, H = 30, x0 = Math.round(cx - L / 2), y0 = Math.round(cy - H);
+    cc.fillStyle = "rgba(20,16,26,0.86)"; cc.fillRect(x0, y0, L, H);
+    cc.strokeStyle = "#1d1726"; cc.lineWidth = 2; cc.strokeRect(x0, y0, L, H);
+    cc.font = "bold 11px monospace"; cc.fillStyle = "#ffe7c2";
+    cc.fillText(ETAPES[o.etape].nom + " " + Math.floor(o.av * 100) + " %", cx, y0 + 12);
+    cc.fillStyle = "#3a3046"; cc.fillRect(x0 + 8, y0 + 16, L - 16, 4);
+    cc.fillStyle = "#e9b872"; cc.fillRect(x0 + 8, y0 + 16, Math.round((L - 16) * o.av), 4);
+    for (let k = 0; k < 4; k++) { cc.fillStyle = k < o.etape ? "#9fd3a8" : k === o.etape ? "#e9b872" : "#3a3046"; cc.fillRect(x0 + L / 2 - 26 + k * 14, y0 + 23, 10, 3); }
+  }
 }
 
-// Jet, bombes et éclair d'explosion (sur le calque)
+// Jet, karcher, bombes, foreuse, X-ray des capsules et éclair d'explosion (sur le calque)
 function dessinerEffetsOutils(temps, q, carre) {
   if (jet) {
     const ax = versEcranX(jet.x0), ay = versEcranY(jet.y0), bx = versEcranX(jet.x1), by = versEcranY(jet.y1);
-    const pulse = 1 + 0.15 * Math.sin(temps * 40);
+    const pulse = (1 + 0.15 * Math.sin(temps * 40)) * (jet.turbo ? 1.6 : 1);
     cc.lineCap = "round";
-    cc.strokeStyle = "rgba(255,140,50,0.35)"; cc.lineWidth = 3.4 * E * taille * 0.5 * pulse;
+    cc.strokeStyle = jet.turbo ? "rgba(120,200,255,0.4)" : "rgba(255,140,50,0.35)"; cc.lineWidth = 3.4 * E * taille * 0.5 * pulse;
     cc.beginPath(); cc.moveTo(ax, ay); cc.lineTo(bx, by); cc.stroke();
-    cc.strokeStyle = "rgba(255,200,110,0.7)"; cc.lineWidth = 1.8 * E * taille * 0.5 * pulse;
+    cc.strokeStyle = jet.turbo ? "rgba(180,230,255,0.75)" : "rgba(255,200,110,0.7)"; cc.lineWidth = 1.8 * E * taille * 0.5 * pulse;
     cc.beginPath(); cc.moveTo(ax, ay); cc.lineTo(bx, by); cc.stroke();
-    cc.strokeStyle = "rgba(255,250,225,0.95)"; cc.lineWidth = 0.7 * E * taille * 0.5;
+    cc.strokeStyle = "rgba(255,250,225,0.95)"; cc.lineWidth = 0.7 * E * taille * 0.5 * pulse;
     cc.beginPath(); cc.moveTo(ax, ay); cc.lineTo(bx, by); cc.stroke();
     cc.fillStyle = "rgba(255,230,160,0.5)";
     cc.beginPath(); cc.arc(bx, by, 2.2 * E * taille * 0.5 * pulse, 0, Math.PI * 2); cc.fill();
@@ -1546,8 +1788,27 @@ function dessinerEffetsOutils(temps, q, carre) {
     cc.fillStyle = b.t < 0.5 && Math.floor(temps * 16) % 2 ? "#ff6a4a" : "#c8423a"; cc.beginPath(); cc.arc(sx, sy, r, 0, Math.PI * 2); cc.fill();
     cc.fillStyle = "#ffd98a"; carre(sx - q / 2, sy - r - q * 1.5, q);
   }
+  for (const f of foreuses) { // une pointe qui tourne
+    const sx = versEcranX(f.x), sy = versEcranY(f.y), a = Math.atan2(f.dy, f.dx), r = 2.4 * E * taille;
+    cc.save(); cc.translate(sx, sy); cc.rotate(a);
+    cc.fillStyle = "#1d1726"; cc.beginPath(); cc.moveTo(r + 2, 0); cc.lineTo(-r * 0.6 - 2, -r * 0.7 - 2); cc.lineTo(-r * 0.6 - 2, r * 0.7 + 2); cc.fill();
+    cc.fillStyle = Math.floor(temps * 20) % 2 ? "#c8ccd6" : "#8a93a3"; cc.beginPath(); cc.moveTo(r, 0); cc.lineTo(-r * 0.6, -r * 0.7); cc.lineTo(-r * 0.6, r * 0.7); cc.fill();
+    cc.restore();
+  }
+  if (xray()) { // capsules encore cachées : petit losange bleu
+    cc.fillStyle = "rgba(170,140,255,0.8)";
+    for (const i of capsulesMonde) {
+      if (type[i] !== CAPSULE) continue;
+      const sx = versEcranX(i % LARG + 0.5), sy = versEcranY(((i / LARG) | 0) + 0.5);
+      if (sx < -10 || sy < -10 || sx > innerWidth + 10 || sy > innerHeight + 10) continue;
+      const s = Math.max(3, taille * 1.2);
+      cc.beginPath(); cc.moveTo(sx, sy - s); cc.lineTo(sx + s, sy); cc.lineTo(sx, sy + s); cc.lineTo(sx - s, sy); cc.fill();
+    }
+  }
   if (flash > 0) { cc.fillStyle = "rgba(255,235,200," + flash.toFixed(2) + ")"; cc.fillRect(0, 0, innerWidth, innerHeight); }
 }
+majStatsLaser(); laser.e = laser.max;
+
 
 let vitesseDoigt = 0; // vitesse du doigt sur l'écran (px/s), mesurée à chaque image
 let tempsImmobile = 0, tempsFrotte = 0, croissanceGrattoir = 1;
@@ -1556,8 +1817,8 @@ let tempsImmobile = 0, tempsFrotte = 0, croissanceGrattoir = 1;
 // Le doigt posé donne de petits coups réguliers (réglage « coups par seconde »).
 // À chaque coup, les cases sous le grattoir perdent des points de vie : 1 au centre, 0,5 au bord.
 // Une case de terre demande « coups pour la terre » ; les autres matières, plus (voir RES).
-const rayonBase = () => Math.max(0.5, rayonGrattoir() / taille);
-const pvMax = t => RES[t] * REG.coupsTerre;
+const rayonBase = () => Math.max(0.5, rayonGrattoir() / taille) * taillePioche(); // (ESSAI : améliorable à l'Atelier)
+const pvMax = (t, y = DEPART_Y) => RES[t] * REG.coupsTerre * durete(y); // ESSAI : la roche durcit en profondeur
 function aPortee(px, py) { return (px - centreMineurX()) ** 2 + (py - centreMineurY()) ** 2 <= REG.portee * REG.portee; }
 
 // Un coup au point (px, py) du monde
@@ -1573,14 +1834,15 @@ function frapper(px, py) {
       if (t === VIDE || t === EAU) { if (osDe[i] >= 0 && d < r0 * 0.8) chocOs(i, 1); continue; } // ESSAI : la pioche abîme les os du mur du fond
       if (t === SOCLE) continue;
       if ((t === CRISTAL || t === FOSSILE) && cristalDe[i] >= 0) continue; // (gros trésors : voir « frotter »)
-      usure[i] += d < r0 * 0.5 ? 1 : 0.5; // le centre frappe plus fort
+      usure[i] += (d < r0 * 0.5 ? 1 : 0.5) * forcePioche(); // le centre frappe plus fort (ESSAI : × force de la pioche)
       touche++; if (!matiere || RES[t] > RES[matiere]) matiere = t;
-      if (usure[i] >= pvMax(t)) { depenser(RES[t]); eclats(x, y, couleurCase(x, y, t), RES[t]); detruire(x, y); casses++; abimes.delete(i); }
+      if (usure[i] >= pvMax(t, y)) { depenser(RES[t]); eclats(x, y, couleurCase(x, y, t), RES[t]); detruire(x, y); casses++; abimes.delete(i); }
       else abimes.set(i, horlogeJeu); // abîmé : il se réparera tout seul si on le laisse
     }
   }
   if (touche) { sonCoup(matiere); vibrer(RES[matiere] >= 3 ? 9 : 5); }
   if (casses) secouer(Math.min(2.5, 0.5 + casses * 0.08 + RES[matiere] * 0.1)); // petite secousse quand ça casse
+  if (casses && bonus.explosions > 0 && Math.random() < 0.3) exploser(px, py, 3 * E); // ESSAI : capsule « Explosions »
   return touche > 0;
 }
 
@@ -1642,16 +1904,21 @@ let enTrainDeFrotter = false;
 // ESSAI : le doigt fait agir l'outil choisi (colonne de droite)
 let sonFond = 0;
 function utiliserOutil(d, dtj) {
-  if (outilMain === "pioche") return majMinage(d, dtj);
   const bx = versMondeX(d.x), by = versMondeY(d.y);
+  visee = { dx: bx - centreMineurX(), dy: by - centreMineurY() }; // (direction de la foreuse)
+  if (outilMain === "pioche") return majMinage(d, dtj);
   if (outilMain === "jet") return majJet(bx, by, dtj);
-  if (outilMain === "pic" || outilMain === "pinceau") {
-    if (expeditionFinie || !aPortee(bx, by)) return;
-    const pic = outilMain === "pic";
-    if (travaillerFond(bx, by, (pic ? 1.3 : 2.6) * E, outilMain, dtj, false)) {
-      sonFond -= dtj;
-      if (sonFond <= 0) { sonFond = pic ? 0.08 : 0.12; if (pic) sonCoup(FOSSILE); else bip(5200 + Math.random() * 800, 0.05, 0.01, "triangle"); vibrer(pic ? 6 : 3); }
-      if (!pic && Math.random() < 0.3) poussiere(Math.floor(bx), Math.floor(by), [200, 185, 160]);
+  if (OUTILS_FOUILLE[outilMain]) {
+    if (!aPortee(bx, by)) return;
+    if (outilMain === "karcher") arroser(bx, by);
+    const travail = fouiller(bx, by, outilMain, dtj);
+    // Son continu selon l'outil (grattage, sifflement de l'eau, polissage) + petites vibrations
+    matiereGrattee = travail ? { pic: FOSSILE, karcher: CRISTAL, grattoir: TERRE, polir: OR }[outilMain] : (outilMain === "karcher" ? CRISTAL : 0);
+    sonFond -= dtj;
+    if (travail && sonFond <= 0) {
+      sonFond = outilMain === "pic" ? 0.09 : 0.14;
+      if (outilMain === "pic") sonCoup(FOSSILE);
+      vibrer(outilMain === "pic" ? 6 : 3);
     }
   }
 }
@@ -1693,7 +1960,7 @@ function majReparation(dtj) {
     const t = type[i];
     if (usure[i] <= 0 || t === VIDE || t === EAU) { usure[i] = 0; abimes.delete(i); continue; }
     if (horlogeJeu - t0 < REG.repDelai) continue;
-    usure[i] -= pvMax(t) * dtj / REG.repDuree;
+    usure[i] -= pvMax(t, (i / LARG) | 0) * dtj / REG.repDuree;
     if (usure[i] <= 0) { usure[i] = 0; abimes.delete(i); }
   }
 }
@@ -1850,7 +2117,8 @@ function majObjets(dt) {
           bulle(0, 1, n >= PIECES_OS.length ? "Squelette complet !" : o.os.nom + " · " + n + "/" + PIECES_OS.length);
         } else bulle(o.t, 1, fossile ? "Fossile !" : "Cristal !");
       } else bulle(o.t, o.n);
-      if (o.t === RECHARGE && !expeditionFinie) energie = Math.min(1, energie + 0.06 * o.n); // la lampe reprend de la force
+      if (o.t === RECHARGE) laser.e = Math.min(laser.max, laser.e + laser.max * 0.5 * o.n); // ESSAI : recharge du laser
+      if (o.t === CAPSULE) for (let k = 0; k < o.n; k++) ouvrirCapsule(); // ESSAI : bonus
       objets.splice(k, 1);
       continue;
     }
@@ -1897,7 +2165,7 @@ function formeDe(t) {
   if (t === CUIVRE || t === OR) return FORME.pepite;
   if (t === CRISTAL) return FORME.eclat;
   if (t === FOSSILE) return FORME.os;
-  if (t === RECHARGE) return FORME.capsule;
+  if (t === RECHARGE || t === CAPSULE) return FORME.capsule;
   return FORME.grain;
 }
 function couleurObjet(t, c) {
@@ -2031,14 +2299,6 @@ ecran.addEventListener("pointerdown", e => {
   doigts.set(e.pointerId, { x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY });
   if (doigts.size >= 2) { modeRegard = true; geste = null; return; } // dès le 2e doigt, on regarde au lieu de gratter
   const wx = versMondeX(e.clientX), wy = versMondeY(e.clientY);
-  // ESSAI : gros plan → toucher un os visible dans le mur ouvre l'écran de fouille
-  if (modeFouille === "gros" && !expeditionFinie) {
-    const cx = Math.floor(wx), cy = Math.floor(wy);
-    if (dansMonde(cx, cy)) {
-      const i = idx(cx, cy);
-      if ((type[i] === VIDE || type[i] === EAU) && osDe[i] >= 0 && revele[i] > 0 && aPortee(wx, wy)) { geste = null; ouvrirGrosPlan(OS[osDe[i]]); return; }
-    }
-  }
   // ESSAI : bombe → lancée vers le doigt (sauf si on attrape le mineur pour le lance-pierre)
   if (outilMain === "bombe" && !(lancePierreActif && peutLancer() && dansPrise(wx, wy))) { geste = null; lancerBombe(wx, wy); return; }
   if (lancePierreActif && peutLancer() && dansPrise(wx, wy)) geste = { type: "lancer", id: e.pointerId };
@@ -2302,8 +2562,11 @@ function dessinerMonde(temps, dt) {
         else if (solide(x, y - 3) || solide(x - 3, y)) kf *= 0.86;
         // ESSAI : os encore dans la terre du mur → on devine sa bosse (lumière dessus, ombre dessous)
         const no = osDe[i];
-        if (no >= 0 && couvert[i] === 2) kf *= osDe[i - LARG] !== no ? 1.65 : osDe[i + LARG] !== no ? 0.6 : 1.15;
+        if (no >= 0 && couvert[i] === 3) kf *= osDe[i - LARG] !== no ? 1.65 : osDe[i + LARG] !== no ? 0.6 : 1.15;
+        // ESSAI : le tour de l'os — terre collée (en mottes plus claires) tant qu'on ne l'a pas détouré, puis un creux sombre
+        else if (gangueDe[i] >= 0) kf *= gangue[i] ? (B2[(x & 127) | ((y & 127) << 7)] < 0.5 ? 1.35 : 1.2) : 0.55;
         r = P[0] * kf; g = P[1] * kf; b = P[2] * kf;
+        if (poteau[i]) { const kp = (x & 1) ? 0.62 : 0.72; r = 172 * kp; g = 118 * kp; b = 66 * kp; } // poteau d'échafaudage (décor)
         if (t === EAU) {
           // Eau transparente : on voit la paroi au travers ; la case n'est remplie que jusqu'à son niveau
           const pleinDessus = y > 0 && type[i - LARG] === EAU;
@@ -2319,9 +2582,10 @@ function dessinerMonde(temps, dt) {
         const n = h1 < 0.22 ? 0.84 : h1 > 0.86 ? 1.14 : 1;
         r = P[0] * n; g = P[1] * n; b = P[2] * n;
         if (t !== SOCLE && y - solY[x] < E) { r = 96 * n; g = 150 * n; b = 70 * n; } // ESSAI : l'herbe en surface
+        if (t === ECHAF) { const kp = ((x >> 2) & 1) ? 1 : 0.86; r = 176 * kp; g = 122 * kp; b = 68 * kp; } // ESSAI : planches
         const u = usure[i];
         // Case entamée (points de vie en baisse) : un peu plus claire, et fissurée par étapes
-        if (u > 0) { const f = Math.min(1, u / pvMax(t)), k = 1 + 0.15 * f; r *= k; g *= k; b *= k; etapeFissure = 1 + Math.min(4, Math.floor(f * 5)); } // 5 étapes visibles avant de casser
+        if (u > 0) { const f = Math.min(1, u / pvMax(t, y)), k = 1 + 0.15 * f; r *= k; g *= k; b *= k; etapeFissure = 1 + Math.min(4, Math.floor(f * 5)); } // 5 étapes visibles avant de casser
         if (COUL[t] && l > 0.3 && hache(x + scintille * 7, y + scintille * 13) > 0.975) { r = 255; g = 250; b = 225; }
         hautVide = vid(x, y - 1); basVide = vid(x, y + 1); gVide = vid(x - 1, y); dVide = vid(x + 1, y);
         if (SUB === 1 && (hautVide || basVide || gVide || dVide)) { r *= 0.6; g *= 0.6; b *= 0.6; }
@@ -2424,7 +2688,7 @@ function dessinerCalque(temps) {
       carre(ox + px * p, oy + py * p);
     }
   };
-  dessinerSquelette(p); dessinerOsFond(p, net); // ESSAI : le squelette géant (surface) et les os du mur du fond
+  dessinerSquelette(p); dessinerOsFond(p, net, temps); // ESSAI : le squelette géant (surface) et les os du mur du fond
   for (const c of cristaux) {
     if (!c.vivant) continue;
     const ox = versEcranX(c.x), oy = versEcranY(c.y);
@@ -2600,8 +2864,8 @@ function dessinerCalque(temps) {
 // ---------- 11. Compteur et boutons ----------
 
 const affCompteur = document.getElementById("compteur");
-const ORDRE_COMPTEUR = [TERRE, SABLE, CAILLOU, ARGILE, SCHISTE, BASALTE, OBSIDIENNE, CUIVRE, OR, CRISTAL, GRAVIER, FOSSILE, RECHARGE];
-const NOM = { [TERRE]: "Terre", [SABLE]: "Sable", [ARGILE]: "Argile", [BASALTE]: "Basalte", [CUIVRE]: "Cuivre", [OR]: "Or", [CRISTAL]: "Cristal", [FOSSILE]: "Fossile", [RECHARGE]: "Recharge", [GRAVIER]: "Débris de cristal", [CAILLOU]: "Caillou", [SCHISTE]: "Schiste", [OBSIDIENNE]: "Obsidienne" };
+const ORDRE_COMPTEUR = [TERRE, SABLE, EBOULIS, CAILLOU, ARGILE, SCHISTE, BASALTE, OBSIDIENNE, CUIVRE, OR, CRISTAL, GRAVIER, FOSSILE, RECHARGE];
+const NOM = { [TERRE]: "Terre", [SABLE]: "Sable", [ARGILE]: "Argile", [BASALTE]: "Basalte", [CUIVRE]: "Cuivre", [OR]: "Or", [CRISTAL]: "Cristal", [FOSSILE]: "Fossile", [RECHARGE]: "Recharge", [GRAVIER]: "Débris de cristal", [CAILLOU]: "Caillou", [SCHISTE]: "Schiste", [OBSIDIENNE]: "Obsidienne", [EBOULIS]: "Éboulis", [ECHAF]: "Planche", [CAPSULE]: "Capsule" };
 const nombre = new Intl.NumberFormat("fr-FR");
 // Une ligne par matière, créée une seule fois ; ensuite on ne change que le nombre,
 // et la ligne qui vient de gagner quelque chose grossit un instant (« saute »)
@@ -2922,22 +3186,26 @@ function finExpedition() {
 // Nouvelle expédition : une nouvelle mine (le butin n'est pas encore gardé : le magasin viendra plus tard)
 document.getElementById("fin-rejouer").addEventListener("click", () => location.reload());
 
-// ---------- ESSAI : boutons des outils (colonne de droite) et de la façon de fouiller ----------
+// ---------- ESSAI : boutons des outils (colonne de droite), remontée, mode démo ----------
 const DESSINS_MAIN = {
   pioche: [[2, 2, 10, 2], [1, 3, 2, 3], [11, 3, 2, 3], [6, 4, 2, 9]],
   jet: [[1, 6, 5, 2], [6, 5, 3, 4], [9, 6, 4, 2], [11, 3, 1, 1], [12, 10, 1, 1], [10, 1, 1, 1]],
   bombe: [[4, 6, 6, 6], [3, 7, 8, 4], [6, 4, 2, 2], [8, 2, 2, 2], [10, 1, 2, 1]],
   pic: [[2, 11, 2, 2], [4, 9, 2, 2], [6, 7, 2, 2], [8, 5, 2, 2], [10, 3, 2, 2], [12, 1, 1, 2]],
-  pinceau: [[9, 1, 2, 6], [7, 7, 6, 2], [6, 9, 8, 2], [6, 11, 2, 2], [9, 11, 2, 2], [12, 11, 2, 2]]
+  karcher: [[1, 5, 6, 3], [3, 8, 2, 4], [7, 6, 3, 1], [11, 4, 1, 1], [11, 7, 1, 1], [12, 5, 1, 2], [10, 9, 1, 1]],
+  grattoir: [[2, 2, 2, 7], [4, 8, 4, 2], [8, 9, 4, 3]],
+  polir: [[4, 6, 7, 6], [5, 5, 5, 1], [2, 2, 1, 1], [11, 2, 1, 1], [12, 4, 1, 1], [1, 4, 1, 1]]
 };
 function majBoutonsMain() {
   for (const b of document.querySelectorAll("#outils-main button")) {
-    b.classList.toggle("actif", b.dataset.main === outilMain);
-    if (b.dataset.main === "bombe") b.querySelector("span").textContent = stockBombes;
+    const o = b.dataset.main;
+    b.classList.toggle("actif", o === outilMain);
+    b.classList.toggle("conseil", o === outilConseille && o !== outilMain); // l'outil de l'étape en cours clignote
+    if (o === "bombe") b.querySelector("span").textContent = stockBombes;
   }
 }
 for (const b of document.querySelectorAll("#outils-main button")) {
-  b.innerHTML = pixelsSvg(DESSINS_MAIN[b.dataset.main]) + (b.dataset.main === "bombe" ? "<span></span>" : "");
+  b.innerHTML = pixelsSvg(DESSINS_MAIN[b.dataset.main]) + (b.dataset.main === "bombe" ? "<span></span>" : b.dataset.main === "jet" ? '<b class="reserve"><i></i></b>' : "");
   b.addEventListener("click", () => {
     outilMain = b.dataset.main;
     try { localStorage.setItem("tunnel-cote-outil", outilMain); } catch (e) {}
@@ -2945,20 +3213,24 @@ for (const b of document.querySelectorAll("#outils-main button")) {
   });
 }
 majBoutonsMain();
-// Loupe : sortir les os « sur place » ou en « gros plan »
-const boutonFouille = document.getElementById("bouton-fouille");
-boutonFouille.innerHTML = pixelsSvg([[4, 1, 5, 1], [3, 2, 1, 1], [9, 2, 1, 1], [2, 3, 1, 5], [10, 3, 1, 5], [3, 8, 1, 1], [9, 8, 1, 1], [4, 9, 5, 1], [9, 9, 2, 2], [11, 11, 2, 2]]);
-function majBoutonFouille() {
-  boutonFouille.classList.toggle("actif", modeFouille === "gros");
-  boutonFouille.setAttribute("aria-label", modeFouille === "gros" ? "Os : gros plan" : "Os : sur place");
+// Petite jauge de la réserve du laser, dans son bouton
+const jaugeLaser = document.querySelector("#outils-main .reserve i");
+let laserAffiche = -1;
+function majJaugeLaser() {
+  const v = bonus.turbo > 0 ? 1 : laser.e / laser.max;
+  if (Math.abs(v - laserAffiche) < 0.01) return;
+  laserAffiche = v;
+  jaugeLaser.style.width = (v * 100).toFixed(0) + "%";
+  jaugeLaser.parentNode.classList.toggle("vide", v < 0.15 && bonus.turbo <= 0);
 }
-boutonFouille.addEventListener("click", () => {
-  modeFouille = modeFouille === "gros" ? "place" : "gros";
-  try { localStorage.setItem("tunnel-cote-mode", modeFouille); } catch (e) {}
-  majBoutonFouille();
-  bulle(0, 1, modeFouille === "gros" ? "Os : gros plan" : "Os : sur place");
-});
-majBoutonFouille();
+// Remonter tout de suite à la surface (et ouvrir l'Atelier)
+const boutonRemonter = document.getElementById("bouton-remonter");
+boutonRemonter.innerHTML = pixelsSvg([[6, 2, 2, 8], [4, 4, 2, 2], [8, 4, 2, 2], [2, 6, 2, 2], [10, 6, 2, 2], [1, 12, 12, 1]]);
+boutonRemonter.addEventListener("click", remonter);
+// Mode démo : toutes les améliorations + X-ray
+const caseDemo = document.getElementById("mode-demo");
+caseDemo.checked = progres.demo;
+caseDemo.addEventListener("change", () => { progres.demo = caseDemo.checked; sauverProgres(); majStatsLaser(); laser.e = laser.max; });
 document.getElementById("squelette-raz").addEventListener("click", () => {
   collection = {}; sauverCollection(); location.reload();
 });
@@ -2984,19 +3256,17 @@ function boucle(ms) {
   majGouttes();
   majObjets(dtj);
   majParticules(dtj);
-  majBombes(dtj); majEboulements(); majOsFond(dtj); majGrosPlan(dt); flash = Math.max(0, flash - dt * 2.2); // ESSAI
+  majBombes(dtj); majForeuses(dtj); majEboulements(); majOsFond(dtj); majLaser(dtj); majBonus(dt); majSurface(dt); majJaugeLaser(); flash = Math.max(0, flash - dt * 2.2); // ESSAI
   majReparation(dtj);
   majBulles(dt);
   majSecousse(dt);
   if (lumiereSale) { calculerLumiere(); lumiereSale = false; }
   majCamera(dt);
   // La flamme vacille (plus fort quand l'énergie baisse), et sa portée suit l'énergie
-  const faible = 1 - energie;
-  const vacille = 1 + (0.05 + 0.06 * faible) * Math.sin(temps * 6.3) + 0.035 * Math.sin(temps * 14.1 + 1) + (0.02 + 0.05 * faible) * Math.sin(temps * 23.7);
-  if (energie <= 0 && !expeditionFinie) { extinction += dt; if (extinction > 1.5) finExpedition(); }
-  const eteint = Math.max(0, 1 - extinction / 1.5);
-  porteeActuelle = REG.lampe * (0.12 + (0.18 * eteint) + 0.7 * energie) * vacille;
-  majBarreEnergie();
+  // ESSAI : plus de fin d'expédition (la lampe ne s'use plus), mais elle porte moins loin en profondeur
+  const vacille = 1 + 0.05 * Math.sin(temps * 6.3) + 0.035 * Math.sin(temps * 14.1 + 1) + 0.02 * Math.sin(temps * 23.7);
+  const sombre = Math.max(0.35, 1 - profCases(mineur.y) / (600 * E));
+  porteeActuelle = REG.lampe * sombre * vacille;
   dessinerMonde(temps, dt);
   dessinerCalque(temps);
   dessinerCompagnon();
