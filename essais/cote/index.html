@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <!-- user-scalable=no : on ne veut pas que deux doigts zooment la page (ils servent à regarder ailleurs) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Tunnel · fouille de côté</title>
+  <meta name="description" content="Petit jeu de minage tranquille, à jouer en écoutant un podcast.">
+  <meta name="theme-color" content="#08090c">
+  <!-- ESSAI : vue de côté (v0.11) + os géants dans le mur du fond -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Le jeu entier est dessiné dans ce « tableau » (canvas) -->
+  <canvas id="jeu"></canvas>
+  <!-- Calque par-dessus : le mineur, les mini-objets et la poussière, dessinés bien nets -->
+  <canvas id="calque"></canvas>
+  <!-- Compagnon (TEST) : une vraie image (GIF animé), positionnée par app.js -->
+  <img id="compagnon" alt="" hidden>
+
+  <!-- Énergie de la lampe : un trait très fin tout en haut -->
+  <div id="energie"><div id="energie-niveau"></div></div>
+
+  <!-- Fin d'expédition (quand la lampe s'éteint) -->
+  <div id="fin" hidden>
+    <div class="fin-carte">
+      <h1>Expédition terminée</h1>
+      <p class="fin-prof">Profondeur atteinte <b id="fin-profondeur">0 m</b></p>
+      <div id="fin-butin"></div>
+      <button id="fin-rejouer">Nouvelle expédition</button>
+    </div>
+  </div>
+
+  <!-- Bandeau « trouvaille » (gros cristal ou fossile ramassé) -->
+  <div id="trouvaille" hidden><canvas id="trouvaille-dessin"></canvas><span id="trouvaille-nom"></span></div>
+
+  <!-- Ce qu'on a ramassé (rempli par app.js) -->
+  <div id="compteur"></div>
+
+  <!-- Tout en bas à gauche : son, lance-pierre (activé ou non), taille du grattoir -->
+  <div id="reglages-bas">
+    <button id="bouton-son" aria-label="Activer le son"></button>
+    <button id="bouton-lance" aria-label="Activer le lance-pierre"></button>
+    <button id="bouton-compagnon" aria-label="Choisir un compagnon"></button>
+    <button id="bouton-fouille" aria-label="Façon de sortir les os"></button>
+    <button id="bouton-reglages" aria-label="Réglages de démo"></button>
+  </div>
+
+  <!-- Compagnon (TEST) : choisir le starter actif, ou aucun -->
+  <div id="panneau-compagnon" hidden>
+    <div class="tete-reglages"><b>Compagnon</b><button id="fermer-compagnon" aria-label="Fermer">✕</button></div>
+    <div id="liste-compagnons"></div>
+  </div>
+
+  <!-- Réglages de DÉMO : panneau en bas, le jeu reste visible au-dessus -->
+  <div id="panneau-demo" hidden>
+    <div class="tete-reglages"><b>Réglages de démo</b><button id="fermer-reglages" aria-label="Fermer">✕</button></div>
+    <div id="liste-reglages"></div>
+    <div class="pied-reglages">
+      <button id="reglages-defaut">Valeurs par défaut</button>
+      <button id="reglages-copier">Copier les valeurs</button>
+    </div>
+    <div class="pied-reglages"><button id="squelette-raz">Recommencer le squelette</button></div>
+  </div>
+  <!-- Déplacement : joystick (gauche / droite = marcher, vers le haut = sauter) -->
+  <div id="joystick" aria-label="Joystick : marcher"><div id="joy-bouton"></div></div>
+  <!-- Saut : gros bouton rond en bas à droite, pour le pouce droit -->
+  <button id="bouton-saut" aria-label="Sauter"></button>
+
+  <!-- Outils du lance-pierre, en haut à droite (les dessins sont ajoutés par app.js) -->
+  <div id="outils">
+    <button data-outil="grappin" aria-label="Grappin : s'accroche à la roche"></button>
+    <button data-outil="rebond" aria-label="Rebond : rebondit sur la roche"></button>
+    <button data-outil="perce" aria-label="Perce : casse la terre et le sable"></button>
+  </div>
+
+  <!-- ESSAI : outils (pioche, jet, bombes, pic et pinceau de fouille), colonne de droite -->
+  <div id="outils-main">
+    <button data-main="pioche" aria-label="Pioche"></button>
+    <button data-main="jet" aria-label="Jet d'énergie"></button>
+    <button data-main="bombe" aria-label="Bombes"></button>
+    <button data-main="pic" aria-label="Pic de fouille"></button>
+    <button data-main="pinceau" aria-label="Pinceau"></button>
+  </div>
+
+  <!-- ESSAI : gros plan de fouille (un os du mur du fond, vu de près) -->
+  <div id="gros-plan" hidden>
+    <div class="gp-tete"><b id="gp-nom">Os</b><span id="gp-pct">0 %</span><button id="gp-fermer" aria-label="Fermer">✕</button></div>
+    <canvas id="gp-toile"></canvas>
+    <div class="gp-outils"><button data-gp="pic" class="actif">Pic</button><button data-gp="pinceau">Pinceau</button></div>
+  </div>
+
+  <!-- Zoom (on peut aussi pincer à deux doigts) -->
+  <div id="zoom">
+    <button data-zoom="-1" aria-label="Voir de plus loin"><svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="2" fill="currentColor"/></svg></button>
+    <button data-zoom="1" aria-label="Voir de plus près"><svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="2" fill="currentColor"/><rect x="6" y="3" width="2" height="8" fill="currentColor"/></svg></button>
+  </div>
+
+  <!-- Profondeur et version, discrètes en haut au milieu -->
+  <div id="profondeur">0 m</div>
+  <div id="version"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
