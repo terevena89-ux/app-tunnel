@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1d2230">
+<title>Fouille — essai</title>
+<style>
+/* Essai « kit de fouille » : un seul fichier, à part du vrai jeu. */
+:root { --fond:#1d2230; --surf:#272d3d; --trait:#3a4256; --texte:#e9e4d8; --discret:#9aa3b5; --accent:#e9b872; }
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { margin:0; height:100%; background:var(--fond); color:var(--texte);
+  font:13px/1.2 system-ui, sans-serif; overflow:hidden; user-select:none; -webkit-user-select:none; touch-action:none; }
+#jeu { position:relative; display:flex; flex-direction:column; height:100%;
+  padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
+#haut { display:flex; gap:6px; padding:6px 8px; }
+.puce { border:1px solid var(--trait); background:var(--surf); color:var(--texte); border-radius:14px;
+  padding:6px 10px; font:inherit; font-size:12px; white-space:nowrap; }
+.puce b { color:var(--accent); font-weight:600; }
+#nouveau { margin-left:auto; }
+#zone { flex:1; position:relative; min-height:0; overflow:hidden; }
+#c { position:absolute; image-rendering:pixelated; image-rendering:crisp-edges; }
+#bac { display:flex; gap:3px; padding:4px 6px; justify-content:center; }
+#bac canvas { width:36px; height:26px; border-radius:6px; background:var(--surf); border:1px solid var(--trait); }
+#bac canvas.ok { animation:pop .35s; }
+@keyframes pop { 50% { transform:scale(1.25); } }
+#outils { display:flex; gap:4px; padding:4px 6px 8px; }
+.outil { flex:1; min-width:0; height:52px; border:1px solid var(--trait); background:var(--surf); border-radius:10px;
+  color:var(--texte); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  font:inherit; font-size:10px; position:relative; padding:0; }
+.outil svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.outil.actif { border-color:var(--accent); background:#3a3326; color:var(--accent); }
+.outil .n { position:absolute; top:3px; right:5px; font-size:10px; color:var(--accent); }
+.outil:disabled { opacity:.4; }
+#vol { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
+#bandeau { position:absolute; left:50%; top:48px; transform:translate(-50%,-8px); background:rgba(20,24,34,.92);
+  border:1px solid var(--trait); border-radius:12px; padding:8px 14px; text-align:center; opacity:0;
+  transition:.25s; pointer-events:none; white-space:nowrap; }
+#bandeau.vu { opacity:1; transform:translate(-50%,0); }
+#bandeau small { display:block; color:var(--discret); margin-top:2px; }
+#bilan { position:absolute; inset:0; background:rgba(12,14,20,.7); display:flex; align-items:center; justify-content:center; }
+#bilan[hidden] { display:none; }
+.carte { background:var(--surf); border:1px solid var(--trait); border-radius:14px; padding:14px 16px; width:280px; }
+.carte h2 { margin:0 0 2px; font-size:17px; }
+.carte .sous { color:var(--discret); margin-bottom:10px; }
+.ligne-b { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid var(--trait); }
+.q0 { color:#9fd3a8; } .q1 { color:#e9c27a; } .q2 { color:#e98f7a; }
+.carte button { margin-top:12px; width:100%; height:40px; border:0; border-radius:10px; background:var(--accent);
+  color:#2a2418; font:inherit; font-weight:600; }
+</style>
+</head>
+<body>
+<div id="jeu">
+  <div id="haut">
+    <button class="puce" id="b-vue">Vue : <b>Dessus</b></button>
+    <button class="puce" id="b-ctrl">Contrôle : <b>Doigt</b></button>
+    <button class="puce" id="nouveau">Nouveau</button>
+  </div>
+  <div id="zone"><canvas id="c"></canvas></div>
+  <div id="bac"></div>
+  <div id="outils">
+    <button class="outil actif" data-o="burin"><svg viewBox="0 0 24 24"><path d="M4 20l8-8M10 10l4 4M14 3h6v4h-6zM17 7v5"/></svg>Burin</button>
+    <button class="outil" data-o="pic"><svg viewBox="0 0 24 24"><path d="M4 20l11-11M15 9c1-3 3-4 5-4M15 9l-2-2"/></svg>Pic</button>
+    <button class="outil" data-o="pinceau"><svg viewBox="0 0 24 24"><path d="M14 10l6-6M10 9l5 5-4 5c-2 1-5 1-7-1 1-1 1-3 1-4z"/></svg>Pinceau</button>
+    <button class="outil" data-o="eau"><svg viewBox="0 0 24 24"><path d="M12 4c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z"/></svg>Eau</button>
+    <button class="outil" data-o="souffle"><svg viewBox="0 0 24 24"><path d="M3 9h11a3 3 0 1 0-3-3M3 13h15a3 3 0 1 1-3 3M3 17h6"/></svg>Souffle</button>
+    <button class="outil" data-o="dynamite"><span class="n" id="n-dyn">3</span><svg viewBox="0 0 24 24"><path d="M8 10h7v10H8zM11.5 10V7c0-2 2-3 4-2M18 3l1-1M19 6h2"/></svg>Dynamite</button>
+  </div>
+  <canvas id="vol"></canvas>
+  <div id="bandeau"></div>
+  <div id="bilan" hidden><div class="carte">
+    <h2 id="bi-titre">Petit raptor</h2>
+    <div class="sous" id="bi-sous"></div>
+    <div id="bi-liste"></div>
+    <button id="bi-ok">Nouveau plateau</button>
+  </div></div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   FOUILLE — essai « kit de fouille »
+   Un plateau de terrain en couches cache un squelette en 9 pièces.
+   On le dégage au burin, au pic, au pinceau, à l'eau, à la soufflette
+   et à la mini-dynamite. Les os se fêlent si on tape trop fort dessus.
+   Deux vues à comparer (Dessus en profondeur / Coupe de côté)
+   et deux contrôles (Doigt / Archéologue).
+   ===================================================================== */
+
+const P = 4;          // 1 case du plateau = 4 pixels d'écran
+const D = 10;         // épaisseur du plateau en vue Dessus (10 « couches »)
+const CIEL = 14;      // lignes de ciel en haut de la vue Coupe
+const PORTEE = 9;     // portée de l'archéologue (en cases)
+const $ = s => document.querySelector(s);
+const jeu = $("#jeu"), zone = $("#zone"), cv = $("#c"), ctx = cv.getContext("2d");
+const vol = $("#vol"), vctx = vol.getContext("2d");
+const hasard = (a, b) => a + Math.random() * (b - a);
+const entier = (a, b) => Math.floor(hasard(a, b + 1));
+
+// ---------- 1. Matières ----------
+// pv = solidité d'une couche (combien de « coups » pour l'enlever)
+const COUCHES = [
+  { nom: "sable",  pv: 1,  c: [224, 192, 132] },
+  { nom: "terre",  pv: 2,  c: [148, 104, 70] },
+  { nom: "argile", pv: 3,  c: [182, 100, 74] },
+  { nom: "roche",  pv: 6,  c: [120, 118, 126] },
+  { nom: "caillou", pv: 12, c: [86, 84, 92] },
+];
+const SOCLE = [64, 62, 70];
+const OS_C = [238, 228, 203], OS_BORD = [196, 178, 146], OS_FEL = [112, 90, 70];
+const POUSS = [232, 216, 184];
+const ENCRE = [38, 48, 79];
+
+// ---------- 2. Les 9 pièces du squelette ----------
+// Chaque pièce est dessinée avec des formes simples (ellipses, segments).
+const PIECES = [
+  { nom: "Crâne", w: 23, h: 14, d(o) { o.ell(8.5, 7, 8, 6); o.seg(10, 8.5, 21.5, 9.5, 2.6); o.ell(7.5, 5.5, 2.2, 2.2, 0); o.ell(19, 8, 1, 1, 0); for (let x = 12; x <= 20; x += 2) { o.pix(x, 12); o.pix(x, 13); } } },
+  { nom: "Mâchoire", w: 19, h: 7, d(o) { o.seg(1.5, 2.5, 17, 4, 1.5); o.seg(1.5, 2.5, 3, 6, 1.2); for (let x = 6; x <= 16; x += 2) o.pix(x, 0); } },
+  { nom: "Colonne", w: 29, h: 8, d(o) { o.seg(1, 5, 27, 5, 1); for (let k = 0; k < 6; k++) { const cx = 2.5 + k * 4.7; o.ell(cx, 5, 2, 2.2); o.seg(cx, 5, cx + 1, 1, .8); } } },
+  { nom: "Côtes", w: 19, h: 15, d(o) { o.seg(1, 1.5, 18, 1.5, 1.2); for (let k = 0; k < 5; k++) { const x = 3 + k * 3.4; o.seg(x, 1.5, x - 1.6, 6, .8); o.seg(x - 1.6, 6, x - .6, 13 - k * .6, .8); } } },
+  { nom: "Bassin", w: 17, h: 12, d(o) { o.ell(8.5, 4, 7.5, 3.6); o.ell(8.5, 4.2, 2.6, 1.6, 0); o.seg(4.5, 6, 2.5, 11, 1.3); o.seg(12.5, 6, 14.5, 11, 1.3); } },
+  { nom: "Fémur", w: 23, h: 7, d(o) { o.seg(3, 3.5, 19.5, 3.5, 1.4); o.ell(2.6, 2.2, 2.2, 1.8); o.ell(2.6, 4.8, 1.9, 1.5); o.ell(20, 3.5, 2.6, 2.6); } },
+  { nom: "Tibia", w: 21, h: 6, d(o) { o.seg(2, 3, 18.5, 3, 1.2); o.ell(2.2, 3, 2, 2.4); o.ell(18.8, 3, 1.7, 2.1); } },
+  { nom: "Griffe", w: 10, h: 12, d(o) { o.seg(2.5, 1.5, 5.5, 4.5, 1.9); o.seg(5.5, 4.5, 7.5, 8.5, 1.3); o.seg(7.5, 8.5, 7, 11, .7); } },
+  { nom: "Queue", w: 32, h: 6, d(o) { for (let k = 0; k < 8; k++) o.ell(2.5 + k * 3.7, 3, 1.9 - k * .13, 2 - k * .16); } },
+];
+
+// Transforme la recette d'une pièce en masque de cases (1 = os)
+function fabriquer(p) {
+  const w = p.w, h = p.h, m = new Uint8Array(w * h);
+  const o = {
+    pix(x, y, v = 1) { if (x >= 0 && y >= 0 && x < w && y < h) m[y * w + x] = v; },
+    ell(cx, cy, rx, ry, v = 1) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const dx = (x + .5 - cx) / rx, dy = (y + .5 - cy) / ry;
+        if (dx * dx + dy * dy <= 1) m[y * w + x] = v;
+      }
+    },
+    seg(x1, y1, x2, y2, r, v = 1) {
+      const vx = x2 - x1, vy = y2 - y1, L = vx * vx + vy * vy;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const px = x + .5 - x1, py = y + .5 - y1;
+        let t = (px * vx + py * vy) / L; t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const ex = px - t * vx, ey = py - t * vy;
+        if (ex * ex + ey * ey <= r * r) m[y * w + x] = v;
+      }
+    },
+  };
+  p.d(o);
+  return { w, h, m };
+}
+
+// Fait tourner un masque d'un angle a (en radians), puis le recadre
+function tourner(f, a) {
+  const c = Math.cos(a), s = Math.sin(a), R = Math.ceil(Math.hypot(f.w, f.h)) + 2;
+  const t = new Uint8Array(R * R);
+  let x0 = R, y0 = R, x1 = -1, y1 = -1;
+  for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
+    const dx = x + .5 - R / 2, dy = y + .5 - R / 2;
+    const sx = Math.floor(c * dx + s * dy + f.w / 2), sy = Math.floor(-s * dx + c * dy + f.h / 2);
+    if (sx >= 0 && sy >= 0 && sx < f.w && sy < f.h && f.m[sy * f.w + sx]) {
+      t[y * R + x] = 1; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+  }
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, m = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = t[(y + y0) * R + x + x0];
+  return { w, h, m };
+}
+
+// Bruit doux (pour des limites de couches ondulées)
+function bruitLisse(s) {
+  const cols = Math.ceil(W / s) + 2, rows = Math.ceil(H / s) + 2;
+  const v = new Float32Array(cols * rows).map(() => Math.random());
+  return (x, y) => {
+    const fx = x / s, fy = y / s, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const a = v[y0 * cols + x0], b = v[y0 * cols + x0 + 1], c = v[(y0 + 1) * cols + x0], d = v[(y0 + 1) * cols + x0 + 1];
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+  };
+}
+
+// ---------- 3. État du plateau ----------
+let W = 128, H = 200, N = W * H;
+let vue = "dessus", controle = "doigt", outil = "burin";
+let h, us, os, zb, dust, wet, grain, off, plein, pv, mat, vu, crack, sh, indice;
+let OS = [];                 // les 9 os placés
+let img, pix;                // image du plateau (1 pixel = 1 case)
+let parts = [];              // miettes et poussière
+let dyns = [], stockDyn = 3; // mini-dynamites posées
+let anims = [], textes = [];
+let arch = { x: 0, y: 0, sens: 1, marche: 0 };
+let secousse = 0, flash = 0, t0 = 0, fini = false;
+
+function nouveauPlateau() {
+  const r = zone.getBoundingClientRect();
+  W = Math.floor(r.width / P); H = Math.floor(r.height / P); N = W * H;
+  cv.width = W; cv.height = H;
+  cv.style.width = W * P + "px"; cv.style.height = H * P + "px";
+  cv.style.left = Math.floor((r.width - W * P) / 2) + "px"; cv.style.top = Math.floor((r.height - H * P) / 2) + "px";
+  img = ctx.createImageData(W, H); pix = img.data;
+  h = new Int8Array(N); us = new Float32Array(N); os = new Int8Array(N).fill(-1); zb = new Int8Array(N);
+  dust = new Float32Array(N); wet = new Float32Array(N); grain = new Uint8Array(N).map(() => Math.random() * 255);
+  off = new Int8Array(N); plein = new Uint8Array(N); pv = new Float32Array(N); mat = new Uint8Array(N);
+  vu = new Uint8Array(N); crack = new Uint8Array(N); sh = new Int16Array(W); indice = new Uint8Array(N);
+  parts = []; dyns = []; anims = []; textes = []; stockDyn = 3; fini = false; t0 = performance.now();
+  if (vue === "dessus") genererDessus(); else genererCoupe();
+  placerOs();
+  arch = { x: W / 2, y: vue === "dessus" ? H - 12 : CIEL - 2, sens: 1, marche: 0 };
+  majDyn(); majBac(); $("#bilan").hidden = true;
+}
+
+function genererDessus() {
+  const b = bruitLisse(14);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x; h[i] = D; off[i] = Math.round((b(x, y) - .5) * 4);
+  }
+}
+// Couche visible en vue Dessus quand il reste « hh » couches sur la case i
+function couche(i, hh) {
+  const k = Math.floor((D - hh + off[i]) / 3);
+  return k < 0 ? 0 : k > 3 ? 3 : k;
+}
+
+function genererCoupe() {
+  const s = bruitLisse(20), b = bruitLisse(16);
+  for (let x = 0; x < W; x++) sh[x] = CIEL + Math.round((s(x, 3) - .5) * 6);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (y < sh[x]) { plein[i] = 0; continue; }
+    const f = (y - CIEL) / (H - CIEL) + (b(x, y) - .5) * .14;
+    const k = Math.max(0, Math.min(3, Math.floor(f * 4)));
+    plein[i] = 1; mat[i] = k; pv[i] = COUCHES[k].pv;
+  }
+  // quelques cailloux bien durs
+  for (let n = 0; n < 22; n++) {
+    const cx = hasard(4, W - 4), cy = hasard(CIEL + 20, H - 4), rx = hasard(1.5, 3.5), ry = hasard(1.2, 2.8);
+    for (let y = Math.floor(cy - ry); y <= cy + ry; y++) for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const dx = (x + .5 - cx) / rx, dy = (y + .5 - cy) / ry;
+      if (dx * dx + dy * dy <= 1) { const i = y * W + x; mat[i] = 4; pv[i] = COUCHES[4].pv; }
+    }
+  }
+}
+
+// Place les 9 os sans qu'ils se touchent (3 cases d'écart)
+function placerOs() {
+  OS = [];
+  const ordre = PIECES.map((p, id) => ({ p, id, f: fabriquer(p) })).sort((a, b) => b.f.w * b.f.h - a.f.w * a.f.h);
+  for (const { p, id, f } of ordre) {
+    const ang = vue === "dessus" ? hasard(0, Math.PI * 2) : hasard(-.45, .45) + (Math.random() < .5 ? Math.PI : 0);
+    const m = tourner(f, ang);
+    const y0 = vue === "dessus" ? 4 : CIEL + 12;
+    let place = null;
+    for (let essai = 0; essai < 500 && !place; essai++) {
+      const ox = entier(3, W - 3 - m.w), oy = entier(y0, H - 4 - m.h);
+      let libre = true;
+      for (let y = 0; y < m.h && libre; y++) for (let x = 0; x < m.w && libre; x++) {
+        if (!m.m[y * m.w + x]) continue;
+        for (let dy = -3; dy <= 3 && libre; dy++) for (let dx = -3; dx <= 3; dx++) {
+          const X = ox + x + dx, Y = oy + y + dy;
+          if (X >= 0 && Y >= 0 && X < W && Y < H && os[Y * W + X] >= 0) { libre = false; break; }
+        }
+      }
+      if (libre) place = { ox, oy };
+    }
+    if (!place) continue;
+    const o = { id, nom: p.nom, f, m, ang, ox: place.ox, oy: place.oy, cells: [], ring: [],
+      zb: entier(2, 7), felures: 0, cd: 0, focus: 0, picT: 0, trouve: false };
+    for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.m[y * m.w + x]) {
+      const i = (o.oy + y) * W + o.ox + x; os[i] = id; o.cells.push(i);
+      if (vue === "dessus") zb[i] = o.zb; else plein[i] = 1;
+    }
+    // indices en surface : quelques éclats d'os qui affleurent au-dessus de la pièce
+    if (vue === "dessus") for (let k = 0; k < 4; k++) indice[o.cells[Math.floor(Math.random() * o.cells.length)]] = 1;
+    // l'anneau = les cases qui entourent l'os (à dégager tout autour)
+    const vus = new Set();
+    for (const i of o.cells) for (const j of [i - 1, i + 1, i - W, i + W]) if (os[j] !== id && !vus.has(j)) { vus.add(j); o.ring.push(j); }
+    OS[id] = o;
+  }
+}
+
+// ---------- 4. Creuser ----------
+let ox = 0, oy = 0; // point de travail courant (pour orienter les miettes)
+
+// Vue Dessus : enlève de la matière sur la case i (abaisse sa hauteur)
+function creuserD(i, dmg) {
+  const min = os[i] >= 0 ? zb[i] : 0;
+  if (h[i] <= min) return 0;
+  us[i] += dmg * (wet[i] > 0 ? 2 : 1);
+  let n = 0;
+  while (h[i] > min) {
+    const k = couche(i, h[i]), p = COUCHES[k].pv;
+    if (us[i] < p) break;
+    us[i] -= p; h[i]--; n++;
+    if (Math.random() < .3) miette(i, COUCHES[k].c);
+  }
+  if (h[i] <= min) us[i] = 0;
+  if (n) {
+    if (os[i] >= 0 && h[i] <= zb[i]) dust[i] = 1;   // l'os apparaît… couvert de terre
+    salir(i, .18);
+  }
+  return n;
+}
+
+// Vue Coupe : abîme la case i ; si elle cède, elle devient vide
+function creuserC(i, dmg) {
+  if (!plein[i] || os[i] >= 0) return 0;
+  pv[i] -= dmg * (wet[i] > 0 ? 2 : 1);
+  if (pv[i] > 0) return 0;
+  plein[i] = 0;
+  if (Math.random() < .45) miette(i, COUCHES[mat[i]].c);
+  // les os proches deviennent visibles (et sales)
+  const x = i % W, y = (i / W) | 0;
+  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    const X = x + dx, Y = y + dy;
+    if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+    const j = Y * W + X;
+    if (os[j] >= 0) {
+      if (!vu[j]) { vu[j] = 1; dust[j] = 1; }
+      else if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) dust[j] = Math.min(1, dust[j] + .2);
+    }
+  }
+  return 1;
+}
+
+// Une case de coupe est « attaquable » si elle touche du vide
+function expose(i) {
+  const x = i % W, y = (i / W) | 0;
+  return y === 0 || !plein[i - W] || (y < H - 1 && !plein[i + W]) || (x > 0 && !plein[i - 1]) || (x < W - 1 && !plein[i + 1]);
+}
+
+function salir(i, q) {
+  const x = i % W, y = (i / W) | 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const X = x + dx, Y = y + dy;
+    if (X >= 0 && Y >= 0 && X < W && Y < H) { const j = Y * W + X; dust[j] = Math.min(1, dust[j] + q * Math.random()); }
+  }
+}
+
+// Parcourt les cases d'un disque ; f = 1 au centre, 0 au bord
+function disque(x, y, r, fn) {
+  const x0 = Math.max(0, Math.floor(x - r)), x1 = Math.min(W - 1, Math.ceil(x + r));
+  const y0 = Math.max(0, Math.floor(y - r)), y1 = Math.min(H - 1, Math.ceil(y + r));
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+    const dx = cx + .5 - x, dy = cy + .5 - y, d = Math.sqrt(dx * dx + dy * dy);
+    if (d <= r) fn(cy * W + cx, 1 - d / r);
+  }
+}
+
+// L'os est-il à nu sur cette case ?
+const osVisible = i => os[i] >= 0 && (vue === "dessus" ? h[i] <= zb[i] : vu[i] === 1);
+
+// ---------- 5. Fêlures ----------
+const QUAL = ["intact", "fêlé", "abîmé"];
+const qualite = o => o.felures === 0 ? 0 : o.felures < 3 ? 1 : 2;
+
+function feler(id, i) {
+  const o = OS[id];
+  if (!o || o.trouve || o.cd > 0) return;
+  o.cd = .3; o.felures++;
+  // petite fissure qui serpente dans l'os
+  let c = o.cells.includes(i) ? i : o.cells[Math.floor(Math.random() * o.cells.length)];
+  for (let k = 0; k < 6; k++) {
+    crack[c] = 1;
+    const v = [c - 1, c + 1, c - W, c + W, c - W - 1, c + W + 1].filter(j => os[j] === id);
+    if (!v.length) break;
+    c = v[Math.floor(Math.random() * v.length)];
+  }
+  const q = qualite(o);
+  texte(i % W, (i / W) | 0, o.felures === 1 || o.felures === 3 ? (q === 1 ? "Fêlé" : "Abîmé") : "Crac", q === 1 ? "#e9c27a" : "#e98f7a");
+  bruit(.18, 3200, 3, .25); ton(320, .16, .12, "sawtooth", 110);
+  vibrer([30, 20, 40]); secousse = Math.max(secousse, 3);
+}
+
+// ---------- 6. Outils ----------
+let appui = false, doigt = { x: 0, y: 0 }, travail = { x: 0, y: 0 }, burinT = 0, sonT = 0, vibT = 0;
+
+function coupBurin(x, y) {
+  ox = x; oy = y;
+  let touche = null, m = -1, total = 0;
+  if (vue === "dessus") {
+    disque(x, y, 5, (i, f) => {
+      if (os[i] >= 0) {
+        if (h[i] <= zb[i]) { if (f > .3 && !touche) touche = { id: os[i], i }; return; }
+        if (h[i] - zb[i] <= 1 && f > .5 && Math.random() < .5 && !touche) touche = { id: os[i], i };
+      }
+      if (m < 0 && h[i] > 0) m = couche(i, h[i]);
+      total += creuserD(i, 9 * f + 1);
+    });
+  } else {
+    for (let passe = 0; passe < 3; passe++) {
+      const liste = [];
+      disque(x, y, 5, (i, f) => { if (plein[i] && expose(i)) liste.push(i, f); });
+      for (let k = 0; k < liste.length; k += 2) {
+        const i = liste[k], f = liste[k + 1];
+        if (os[i] >= 0) { if (f > .3 && passe === 0 && !touche) touche = { id: os[i], i }; continue; }
+        if (m < 0) m = mat[i];
+        total += creuserC(i, (9 * f + 1) * (1 - passe * .3));
+      }
+    }
+  }
+  // le son : « tink » du métal + le bruit de la matière
+  ton(2300 + Math.random() * 300, .04, .05, "square");
+  if (m >= 0) { const s = SON_MAT[m]; bruit(.13, s.f, s.q, .3); ton(90, .09, .22, "sine", 60); }
+  else ton(140, .06, .1, "sine");
+  vibrer(m >= 3 ? [22] : [14]);
+  secousse = Math.max(secousse, m >= 3 ? 2 : 1.2);
+  if (touche) { ton(560, .08, .14); ton(820, .06, .07, "triangle", 0, .01); feler(touche.id, touche.i); }
+}
+
+function outilContinu(dt) {
+  const x = travail.x, y = travail.y; ox = x; oy = y;
+  sonT -= dt; vibT -= dt;
+  if (outil === "pic") {
+    let m = -1, surOs = -1;
+    disque(x, y, 1.8, (i, f) => {
+      if (osVisible(i)) { surOs = os[i]; dust[i] = Math.min(1, dust[i] + dt * .5); return; }
+      if (vue === "dessus") { if (m < 0 && h[i] > (os[i] >= 0 ? zb[i] : 0)) m = couche(i, h[i]); creuserD(i, 10 * dt * (.5 + .5 * f)); }
+      else if (plein[i] && os[i] < 0 && expose(i)) { m = mat[i]; creuserC(i, 10 * dt * (.5 + .5 * f)); }
+    });
+    if (surOs >= 0) { const o = OS[surOs]; o.picT += dt; if (o.picT > 1.4) { o.picT = 0; feler(surOs, Math.round(y) * W + Math.round(x)); } }
+    if (sonT <= 0) { sonT = .075; if (m >= 0) bruit(.035, SON_MAT[m].f * 1.6, 3, .1); else if (surOs >= 0) ton(1400, .03, .04); }
+    if (vibT <= 0 && m >= 0) { vibT = .09; vibrer(m >= 3 ? 6 : 4); }
+  } else if (outil === "pinceau") {
+    disque(x, y, 4, (i, f) => {
+      dust[i] = Math.max(0, dust[i] - 3 * dt * (.4 + .6 * f));
+      if (vue === "dessus") { if (h[i] > (os[i] >= 0 ? zb[i] : 0) && couche(i, h[i]) === 0) creuserD(i, 1.4 * dt); }
+      else if (plein[i] && os[i] < 0 && mat[i] === 0 && expose(i)) creuserC(i, 1.4 * dt);
+    });
+    if (Math.random() < .5) poussiere(x + hasard(-3, 3), y + hasard(-3, 3), 1);
+    if (sonT <= 0) { sonT = .11; bruit(.12, 5200, .7, .035, "highpass"); }
+    if (vibT <= 0) { vibT = .16; vibrer(2); }
+  } else if (outil === "eau") {
+    disque(x, y, 5, i => { wet[i] = 9; });
+    if (Math.random() < .6) goutte(x + hasard(-4, 4), y + hasard(-4, 4));
+    if (sonT <= 0) { sonT = .22; ton(hasard(800, 1000), .08, .06, "sine", 1500); }
+  } else if (outil === "souffle") {
+    disque(x, y, 12, (i, f) => {
+      dust[i] = Math.max(0, dust[i] - 5 * dt * f);
+      if (f > .5) {
+        if (vue === "dessus") { if (h[i] > (os[i] >= 0 ? zb[i] : 0) && couche(i, h[i]) === 0) creuserD(i, .9 * dt); }
+        else if (plein[i] && os[i] < 0 && mat[i] === 0 && expose(i)) creuserC(i, .9 * dt);
+      }
+    });
+    for (let k = 0; k < 4; k++) { const a = hasard(0, 6.28), r = hasard(1, 8); poussiere(x + Math.cos(a) * r, y + Math.sin(a) * r, 3, a); }
+    if (sonT <= 0) { sonT = .2; bruit(.28, 900, .6, .09, "bandpass", 2600); }
+    if (vibT <= 0) { vibT = .12; vibrer(5); }
+  }
+  // l'os travaillé affiche son avancement
+  for (const o of OS) if (o && !o.trouve && x > o.ox - 4 && x < o.ox + o.m.w + 4 && y > o.oy - 4 && y < o.oy + o.m.h + 4) o.focus = 1.4;
+}
+
+function poserDynamite(x, y) {
+  if (stockDyn <= 0) return;
+  stockDyn--; majDyn();
+  dyns.push({ x, y, t: 1.5 });
+  ton(700, .05, .08, "square");
+}
+
+function exploser(x, y) {
+  const touches = new Map();
+  if (vue === "dessus") {
+    disque(x, y, 13, (i, f) => {
+      if (os[i] >= 0 && f > .25 && h[i] - zb[i] <= Math.round(7 * f)) touches.set(os[i], { i, f: Math.max(f, (touches.get(os[i]) || { f: 0 }).f) });
+      creuserD(i, 30 * f * f + 2);
+    });
+  } else {
+    disque(x, y, 12, (i, f) => {
+      if (os[i] >= 0) { if (f > .25) touches.set(os[i], { i, f }); return; }
+      if (plein[i]) creuserC(i, 34 * f + 2);
+    });
+  }
+  for (const [id, t] of touches) { OS[id].cd = 0; feler(id, t.i); if (t.f > .6) { OS[id].cd = 0; feler(id, t.i); } }
+  for (let k = 0; k < 120; k++) {
+    const a = hasard(0, 6.28), v = hasard(20, 90);
+    parts.push({ x, y, z: 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: hasard(20, 60), c: k % 3 ? [250, hasard(140, 220), 80] : [120, 110, 100], vie: hasard(.3, .9), max: .9, p: 0 });
+  }
+  for (let k = 0; k < 40; k++) poussiere(x + hasard(-10, 10), y + hasard(-10, 10), 4);
+  bruit(.9, 260, .5, .7, "lowpass", 60); ton(70, .7, .5, "sine", 28);
+  vibrer([70, 30, 130]); secousse = 10; flash = .5;
+}
+
+// ---------- 7. Miettes, poussière, gouttes ----------
+function miette(i, c) {
+  if (parts.length > 1400) return;
+  const x = i % W + .5, y = ((i / W) | 0) + .5, a = Math.atan2(y - oy, x - ox) + hasard(-.6, .6), v = hasard(8, 30);
+  parts.push({ x, y, z: 0, vx: Math.cos(a) * v, vy: Math.sin(a) * v - (vue === "coupe" ? hasard(10, 30) : 0), vz: hasard(12, 30),
+    c: c.map(v => v * hasard(.8, 1.05)), vie: hasard(.5, 1.1), max: 1.1, p: 0 });
+}
+function poussiere(x, y, n, a) {
+  for (let k = 0; k < n; k++) {
+    if (parts.length > 1400) return;
+    const ang = a !== undefined ? a + hasard(-.3, .3) : hasard(0, 6.28), v = a !== undefined ? hasard(30, 60) : hasard(2, 8);
+    parts.push({ x, y, z: 0, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, vz: 0, c: POUSS, vie: hasard(.4, .9), max: .9, p: 1 });
+  }
+}
+function goutte(x, y) {
+  parts.push({ x, y, z: 6, vx: 0, vy: 0, vz: -10, c: [150, 200, 235], vie: .35, max: .35, p: 2 });
+}
+function majParts(dt) {
+  for (let k = parts.length - 1; k >= 0; k--) {
+    const q = parts[k];
+    q.vie -= dt;
+    if (q.vie <= 0) { parts[k] = parts[parts.length - 1]; parts.pop(); continue; }
+    if (q.p === 1) { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= .9; q.vy *= .9; if (vue === "coupe") q.y -= 3 * dt; continue; }
+    if (vue === "dessus" || q.p === 2) {
+      q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt; q.vz -= 90 * dt;
+      if (q.z < 0) { q.z = 0; q.vz = -q.vz * .3; q.vx *= .5; q.vy *= .5; }
+    } else {
+      // vue Coupe : la miette tombe et s'arrête sur la matière
+      const nx = q.x + q.vx * dt, ny = q.y + q.vy * dt;
+      const j = Math.floor(ny) * W + Math.floor(nx);
+      if (nx < 0 || nx >= W || ny >= H || (ny >= 0 && plein[j])) { q.vx = 0; q.vy = 0; q.vie = Math.min(q.vie, .25); }
+      else { q.x = nx; q.y = ny; q.vy += 140 * dt; }
+    }
+  }
+}
+
+// ---------- 8. Os dégagés : vérification et révélation ----------
+function etatOs(o) {
+  let sale = 0;
+  if (vue === "dessus") {
+    let ex = 0, ring = 0;
+    for (const c of o.cells) if (h[c] <= o.zb) { ex++; sale += dust[c]; } else sale += 1;
+    for (const j of o.ring) if (h[j] < o.zb) ring++;
+    const e = ex / o.cells.length, r = ring / o.ring.length, p = 1 - sale / o.cells.length;
+    return { fini: e >= .97 && r >= .8 && p >= .85, pct: Math.min(e / .97, 1) * .5 + Math.min(r / .8, 1) * .25 + Math.min(p / .85, 1) * .25, e };
+  }
+  let ring = 0, ex = 0;
+  for (const j of o.ring) if (!plein[j]) ring++;
+  for (const c of o.cells) if (vu[c]) { ex++; sale += dust[c]; } else sale += 1;
+  const r = ring / o.ring.length, p = 1 - sale / o.cells.length;
+  return { fini: r >= .85 && p >= .85, pct: Math.min(r / .85, 1) * .7 + Math.min(p / .85, 1) * .3, e: ex / o.cells.length };
+}
+
+let verifT = 0;
+function verifier(dt) {
+  for (const o of OS) if (o) { o.cd = Math.max(0, o.cd - dt); o.focus = Math.max(0, o.focus - dt); }
+  verifT -= dt; if (verifT > 0) return; verifT = .2;
+  for (const o of OS) if (o && !o.trouve) { const e = etatOs(o); o.pct = e.pct; o.ex = e.e; if (e.fini) reveler(o); }
+}
+
+function reveler(o) {
+  o.trouve = true;
+  // dessin de l'os (avec ses fissures) pour l'animation de sortie
+  const c = document.createElement("canvas"); c.width = o.m.w; c.height = o.m.h;
+  const g = c.getContext("2d"), id = g.createImageData(o.m.w, o.m.h);
+  for (let y = 0; y < o.m.h; y++) for (let x = 0; x < o.m.w; x++) {
+    if (!o.m.m[y * o.m.w + x]) continue;
+    const i = (o.oy + y) * W + o.ox + x;
+    const bord = [i - 1, i + 1, i - W, i + W].some(j => os[j] !== o.id);
+    const col = crack[i] ? OS_FEL : bord ? OS_BORD : OS_C, k = (y * o.m.w + x) * 4;
+    id.data[k] = col[0]; id.data[k + 1] = col[1]; id.data[k + 2] = col[2]; id.data[k + 3] = 255;
+  }
+  g.putImageData(id, 0, 0);
+  // l'os quitte le plateau : il laisse son empreinte
+  for (const i of o.cells) { os[i] = -1; dust[i] = 0; crack[i] = 0; if (vue === "coupe") { plein[i] = 0; mat[i] = mat[i]; } }
+  anims.push({ o, cv: c, t: 0 });
+  const q = qualite(o);
+  bandeau(o.nom, QUAL[q]);
+  [523, 659, 784, 1047].forEach((f, k) => ton(f, .5, .09, "triangle", 0, k * .07));
+  vibrer([20, 40, 20, 40, 60]);
+  for (let k = 0; k < 30; k++) {
+    const a = hasard(0, 6.28), v = hasard(10, 40);
+    parts.push({ x: o.ox + o.m.w / 2, y: o.oy + o.m.h / 2, z: 3, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: hasard(10, 40), c: [255, 240, 190], vie: hasard(.4, .9), max: .9, p: 0 });
+  }
+}
+
+// ---------- 9. Sons et vibrations ----------
+const SON_MAT = [{ f: 2600, q: .8 }, { f: 900, q: 1.2 }, { f: 620, q: 1.6 }, { f: 1900, q: 3 }, { f: 2500, q: 4 }];
+let ac = null, buf = null, sortie = null;
+function audio() {
+  if (!ac) {
+    try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+    sortie = ac.createGain(); sortie.gain.value = .8; sortie.connect(ac.destination);
+    buf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state === "suspended") ac.resume();
+}
+// bruit filtré (frottement, choc de matière, souffle, explosion)
+function bruit(dur, f, q, vol, type = "bandpass", f2) {
+  if (!ac) return;
+  const t = ac.currentTime, s = ac.createBufferSource(); s.buffer = buf; s.loop = true;
+  const fi = ac.createBiquadFilter(); fi.type = type; fi.frequency.setValueAtTime(f, t); fi.Q.value = q;
+  if (f2) fi.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  const g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  s.connect(fi).connect(g).connect(sortie); s.start(t, Math.random() * .5); s.stop(t + dur + .02);
+}
+// note simple (métal, os, accords)
+function ton(f, dur, vol, type = "triangle", f2, retard = 0) {
+  if (!ac) return;
+  const t = ac.currentTime + retard, o = ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t);
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  const g = ac.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .005);
+  g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g).connect(sortie); o.start(t); o.stop(t + dur + .02);
+}
+function vibrer(p) { try { navigator.vibrate && navigator.vibrate(p); } catch {} }
+
+// ---------- 10. Dessin ----------
+function px(i, r, g, b) { const k = i * 4; pix[k] = r; pix[k + 1] = g; pix[k + 2] = b; pix[k + 3] = 255; }
+function melange(i, c, a) {
+  const k = i * 4; pix[k] += (c[0] - pix[k]) * a; pix[k + 1] += (c[1] - pix[k + 1]) * a; pix[k + 2] += (c[2] - pix[k + 2]) * a;
+}
+
+function dessinerDessus() {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, hb = h[i], bo = os[i], gr = .94 + grain[i] / 255 * .12;
+    let r, g, b;
+    if (bo >= 0 && hb <= zb[i]) {
+      // os à nu
+      const bord = (x > 0 && !(os[i - 1] === bo && h[i - 1] <= zb[i - 1])) || (x < W - 1 && !(os[i + 1] === bo && h[i + 1] <= zb[i + 1]))
+        || (y > 0 && !(os[i - W] === bo && h[i - W] <= zb[i - W])) || (y < H - 1 && !(os[i + W] === bo && h[i + W] <= zb[i + W]));
+      const c = crack[i] ? OS_FEL : bord ? OS_BORD : OS_C;
+      const w = wet[i] > 0 ? .9 : 1;
+      r = c[0] * gr * w; g = c[1] * gr * w; b = c[2] * gr * w * .97;
+    } else {
+      const c = hb === 0 ? SOCLE : COUCHES[couche(i, hb)].c;
+      let k = gr * (1 - .05 * (D - hb));
+      // ombre et lumière selon la pente (lumière qui vient d'en haut à gauche)
+      if (x > 0 && y > 0) {
+        const dh = h[i - W - 1] - hb;
+        if (dh > 0) k *= 1 - .14 * Math.min(dh, 4); else if (dh < 0) k *= 1 + .07 * Math.min(-dh, 3);
+      }
+      if (wet[i] > 0) k *= .78;
+      r = c[0] * k; g = c[1] * k; b = c[2] * k;
+      if (bo >= 0) {
+        // indices : terre plus claire juste au-dessus d'un os, silhouette quand c'est mouillé
+        const cover = hb - zb[i], a = (cover <= 2 ? .1 : 0) + (wet[i] > 0 && cover <= 3 ? .3 : 0);
+        if (a) { r += (OS_C[0] * .8 - r) * a; g += (OS_C[1] * .8 - g) * a; b += (OS_C[2] * .8 - b) * a; }
+      }
+      // trait d'encre autour d'un os à nu
+      const nb = j => os[j] >= 0 && h[j] <= zb[j];
+      if ((x > 0 && nb(i - 1)) || (x < W - 1 && nb(i + 1)) || (y > 0 && nb(i - W)) || (y < H - 1 && nb(i + W))) {
+        r = r * .4 + ENCRE[0] * .3; g = g * .4 + ENCRE[1] * .3; b = b * .4 + ENCRE[2] * .3;
+      }
+    }
+    px(i, r, g, b);
+    if (dust[i] > .02) melange(i, POUSS, dust[i] * (bo >= 0 && hb <= zb[i] ? .35 + grain[i] / 255 * .4 : .15 + grain[i] / 255 * .25));
+    if (indice[i] && hb === D) px(i, 236, 226, 200);
+  }
+}
+
+function dessinerCoupe() {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, gr = .94 + grain[i] / 255 * .12;
+    if (plein[i]) {
+      if (os[i] >= 0 && vu[i]) {
+        const bo = os[i];
+        const bord = [i - 1, i + 1, i - W, i + W].some(j => os[j] !== bo);
+        const c = crack[i] ? OS_FEL : bord ? OS_BORD : OS_C;
+        px(i, c[0] * gr, c[1] * gr, c[2] * gr);
+        if (dust[i] > .02) melange(i, COUCHES[mat[i]].c, dust[i] * .7);
+        continue;
+      }
+      const c = COUCHES[mat[i]].c;
+      let k = gr;
+      if (y > 0 && !plein[i - W]) k *= 1.15; else if (y < H - 1 && !plein[i + W]) k *= .72;
+      else if ((x > 0 && !plein[i - 1]) || (x < W - 1 && !plein[i + 1])) k *= .88;
+      if (wet[i] > 0) k *= .78;
+      px(i, c[0] * k, c[1] * k, c[2] * k);
+    } else if (y < sh[x]) {
+      const t = y / CIEL;
+      px(i, 150 + 50 * t, 186 + 30 * t, 214 + 12 * t);
+    } else {
+      // vide creusé : le fond de la galerie, sombre
+      const c = COUCHES[mat[i]].c, k = .3 * gr;
+      px(i, c[0] * k + 14, c[1] * k + 14, c[2] * k + 20);
+      // trait d'encre autour d'un os visible
+      if ([i - 1, i + 1, i - W, i + W].some(j => j >= 0 && j < N && os[j] >= 0 && vu[j])) melange(i, ENCRE, .6);
+    }
+  }
+}
+
+function dessinerParts() {
+  for (const q of parts) {
+    const x = Math.floor(q.x), y = Math.floor(q.y - (vue === "dessus" || q.p === 2 ? q.z : 0));
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const a = q.p === 1 ? Math.min(1, q.vie / q.max) * .7 : Math.min(1, q.vie / q.max * 3);
+    melange(y * W + x, q.c, a);
+  }
+}
+
+const ARCH = [
+  "..KKK..",
+  ".KHHHK.",
+  "KHHHHHK",
+  ".KSSSK.",
+  ".KBBBK.",
+  "KSBBBSK",
+  ".KBBBK.",
+  ".KPKPK.",
+  ".KPKPK.",
+  ".KK.KK.",
+];
+const ARCH_C = { K: ENCRE, H: [204, 170, 98], S: [236, 190, 150], B: [86, 128, 160], P: [96, 82, 66] };
+function dessinerArch() {
+  const ax = Math.round(arch.x), ay = Math.round(arch.y) - (arch.marche > 0 && Math.floor(arch.marche * 8) % 2 ? 1 : 0);
+  if (vue === "coupe") {
+    // la corde qui descend du ciel
+    for (let y = 0; y < ay - 9; y++) if (ax >= 0 && ax < W) melange(y * W + ax, [200, 170, 120], .8);
+  } else {
+    // ombre au sol
+    for (let dx = -3; dx <= 3; dx++) { const X = ax + dx, Y = ay + 1; if (X >= 0 && X < W && Y < H) melange(Y * W + X, [0, 0, 0], .3); }
+  }
+  for (let r = 0; r < ARCH.length; r++) for (let c = 0; c < 7; c++) {
+    const ch = ARCH[r][arch.sens > 0 ? c : 6 - c]; if (ch === ".") continue;
+    const X = ax - 3 + c, Y = ay - 9 + r; if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+    const col = ARCH_C[ch]; px(Y * W + X, col[0], col[1], col[2]);
+  }
+  // l'outil dans la main, pointé vers le point de travail
+  if (appui) {
+    const hx = ax + arch.sens * 3, hy = ay - 4, dx = travail.x - hx, dy = travail.y - hy, d = Math.hypot(dx, dy) || 1;
+    for (let k = 1; k <= 3; k++) { const X = Math.round(hx + dx / d * k), Y = Math.round(hy + dy / d * k); if (X >= 0 && Y >= 0 && X < W && Y < H) px(Y * W + X, 190, 196, 206); }
+  }
+}
+
+function dessinerDyns(temps) {
+  for (const d of dyns) {
+    const x = Math.round(d.x), y = Math.round(d.y);
+    for (let dy = -3; dy <= 0; dy++) for (let dx = -1; dx <= 0; dx++) {
+      const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < W && Y < H) px(Y * W + X, 200, 60, 50);
+    }
+    if (y - 4 >= 0 && (temps * 12 | 0) % 2) px((y - 4) * W + x, 255, 230, 120);
+  }
+}
+
+function rendre(temps) {
+  if (vue === "dessus") dessinerDessus(); else dessinerCoupe();
+  dessinerDyns(temps);
+  dessinerParts();
+  if (controle === "archeo") dessinerArch();
+  ctx.putImageData(img, 0, 0);
+  // secousse de l'écran
+  const s = secousse;
+  cv.style.transform = s > .1 ? `translate(${Math.round(hasard(-s, s))}px,${Math.round(hasard(-s, s))}px)` : "";
+  dessinerVol(temps);
+}
+
+// Calque du dessus : cercle de l'outil, % d'avancement, os qui s'envolent, textes
+function dessinerVol(temps) {
+  const dpr = window.devicePixelRatio || 1, jr = jeu.getBoundingClientRect(), cr = cv.getBoundingClientRect();
+  if (vol.width !== Math.round(jr.width * dpr) || vol.height !== Math.round(jr.height * dpr)) {
+    vol.width = Math.round(jr.width * dpr); vol.height = Math.round(jr.height * dpr);
+  }
+  vctx.setTransform(dpr, 0, 0, dpr, 0, 0); vctx.clearRect(0, 0, jr.width, jr.height);
+  vctx.imageSmoothingEnabled = false;
+  const bx = cr.left - jr.left, by = cr.top - jr.top, ecran = (x, y) => [bx + x * P, by + y * P];
+  if (flash > 0) { vctx.fillStyle = `rgba(255,240,210,${flash})`; vctx.fillRect(0, 0, jr.width, jr.height); }
+  // cercle de l'outil
+  if (appui && outil !== "dynamite") {
+    const r = { burin: 5, pic: 1.8, pinceau: 4, eau: 5, souffle: 12 }[outil], [sx, sy] = ecran(travail.x, travail.y);
+    vctx.strokeStyle = "rgba(255,255,255,.55)"; vctx.lineWidth = 1;
+    vctx.beginPath(); vctx.arc(sx, sy, Math.max(3, r * P), 0, 6.283); vctx.stroke();
+  }
+  // avancement de l'os qu'on travaille
+  vctx.font = "600 11px system-ui"; vctx.textAlign = "center";
+  for (const o of OS) if (o && !o.trouve && o.focus > 0 && o.ex > .15) {
+    const [sx, sy] = ecran(o.ox + o.m.w / 2, o.oy - 2);
+    vctx.globalAlpha = Math.min(1, o.focus * 2);
+    vctx.fillStyle = "rgba(20,24,34,.8)"; vctx.fillRect(sx - 18, sy - 12, 36, 15);
+    vctx.fillStyle = "#e9b872"; vctx.fillText(Math.floor(o.pct * 100) + " %", sx, sy);
+    vctx.globalAlpha = 1;
+  }
+  // os qui sortent de terre puis volent vers le bac
+  for (const a of anims) {
+    const o = a.o, [x0, y0] = ecran(o.ox, o.oy), w = o.m.w * P, hh = o.m.h * P;
+    const cx = x0 + w / 2, cy = y0 + hh / 2;
+    if (a.t < .8) {
+      const k = a.t / .8, lev = (1 - (1 - k) ** 3) * 14;
+      vctx.fillStyle = "rgba(0,0,0,.22)";
+      vctx.beginPath(); vctx.ellipse(cx, cy + 3, w * .42, hh * .32, 0, 0, 6.283); vctx.fill();
+      vctx.save(); vctx.shadowColor = "rgba(255,240,200,.9)"; vctx.shadowBlur = 10 + 6 * Math.sin(temps * 12);
+      vctx.drawImage(a.cv, x0, y0 - lev, w, hh); vctx.restore();
+    } else {
+      const k = Math.min(1, (a.t - .8) / .7), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+      const slot = $("#bac").children[o.id].getBoundingClientRect();
+      const tx = slot.left - jr.left + slot.width / 2, ty = slot.top - jr.top + slot.height / 2;
+      const s = 1 + (Math.min(30 / w, 20 / hh) - 1) * e;
+      vctx.save(); vctx.translate(cx + (tx - cx) * e, cy - 14 + (ty - cy + 14) * e); vctx.rotate(-o.ang * e * (vue === "dessus" ? 1 : 0)); vctx.scale(s, s);
+      vctx.drawImage(a.cv, -w / 2, -hh / 2, w, hh); vctx.restore();
+    }
+  }
+  // petits textes (« Fêlé », « Crac »…)
+  for (const t of textes) {
+    const [sx, sy] = ecran(t.x, t.y);
+    vctx.globalAlpha = Math.min(1, t.t * 2); vctx.fillStyle = t.c;
+    vctx.fillText(t.txt, sx, sy - (1.2 - t.t) * 20); vctx.globalAlpha = 1;
+  }
+}
+
+// ---------- 11. Bac des os (en bas) ----------
+function majBac() {
+  const bac = $("#bac"), dpr = window.devicePixelRatio || 1;
+  if (bac.children.length !== PIECES.length) {
+    bac.innerHTML = "";
+    PIECES.forEach(() => { const c = document.createElement("canvas"); c.width = 36 * dpr; c.height = 26 * dpr; bac.appendChild(c); });
+  }
+  PIECES.forEach((p, id) => {
+    const c = bac.children[id], g = c.getContext("2d"), f = OS[id] ? OS[id].f : fabriquer(p), o = OS[id];
+    const fait = o && o.trouve && !anims.some(a => a.o === o);
+    g.clearRect(0, 0, c.width, c.height);
+    const s = Math.min((c.width - 6 * dpr) / f.w, (c.height - 6 * dpr) / f.h), x0 = (c.width - f.w * s) / 2, y0 = (c.height - f.h * s) / 2;
+    g.fillStyle = fait ? "#eee4cb" : "#3d4559";
+    for (let y = 0; y < f.h; y++) for (let x = 0; x < f.w; x++) if (f.m[y * f.w + x]) g.fillRect(x0 + x * s, y0 + y * s, Math.ceil(s), Math.ceil(s));
+    c.style.borderColor = fait ? ["#9fd3a8", "#e9c27a", "#e98f7a"][qualite(o)] : "";
+  });
+}
+
+function majDyn() {
+  $("#n-dyn").textContent = stockDyn;
+  $('[data-o="dynamite"]').disabled = stockDyn <= 0 && !dyns.length;
+}
+
+let bandeauT = null;
+function bandeau(titre, sous) {
+  const b = $("#bandeau"); b.innerHTML = `${titre}<small>${sous}</small>`; b.classList.add("vu");
+  clearTimeout(bandeauT); bandeauT = setTimeout(() => b.classList.remove("vu"), 1800);
+}
+function texte(x, y, txt, c) { textes.push({ x, y, txt, c, t: 1.2 }); }
+
+function bilan() {
+  fini = true;
+  const min = Math.max(1, Math.round((performance.now() - t0) / 60000));
+  $("#bi-sous").textContent = `Squelette complet · ${min} min`;
+  $("#bi-liste").innerHTML = PIECES.map((p, id) => {
+    const o = OS[id]; if (!o) return "";
+    const q = qualite(o);
+    return `<div class="ligne-b"><span>${p.nom}</span><span class="q${q}">${QUAL[q]}</span></div>`;
+  }).join("");
+  $("#bilan").hidden = false;
+  [523, 659, 784, 1047, 1319].forEach((f, k) => ton(f, .7, .08, "triangle", 0, k * .1));
+}
+
+// ---------- 12. Boucle de jeu ----------
+let avant = performance.now();
+function boucle(maint) {
+  const dt = Math.min(.05, (maint - avant) / 1000); avant = maint;
+  const temps = maint / 1000;
+  if (!fini) etape(dt);
+  rendre(temps);
+  requestAnimationFrame(boucle);
+}
+
+function etape(dt) {
+  // archéologue : il marche vers le doigt et travaille à portée de main
+  if (controle === "archeo") {
+    arch.marche = 0;
+    if (appui) {
+      const hx = arch.x, hy = arch.y - 4, dx = doigt.x - hx, dy = doigt.y - hy, d = Math.hypot(dx, dy);
+      if (d > PORTEE) {
+        const pas = Math.min(45 * dt, d - PORTEE), vx = dx / d * pas, vy = dy / d * pas;
+        if (vue === "dessus") { arch.x = Math.max(3, Math.min(W - 4, arch.x + vx)); arch.y = Math.max(10, Math.min(H - 2, arch.y + vy)); }
+        else { if (libre(arch.x + vx, arch.y)) arch.x += vx; if (libre(arch.x, arch.y + vy)) arch.y += vy; }
+        arch.marche = 1;
+      }
+      if (Math.abs(dx) > 1) arch.sens = dx > 0 ? 1 : -1;
+      const dd = Math.hypot(doigt.x - arch.x, doigt.y - (arch.y - 4)), k = dd > PORTEE ? PORTEE / dd : 1;
+      travail.x = arch.x + (doigt.x - arch.x) * k; travail.y = arch.y - 4 + (doigt.y - arch.y + 4) * k;
+    }
+  } else { travail.x = doigt.x; travail.y = doigt.y; }
+
+  if (appui) {
+    if (outil === "burin") { burinT -= dt; if (burinT <= 0) { burinT = .38; coupBurin(travail.x, travail.y); } }
+    else if (outil !== "dynamite") outilContinu(dt);
+  }
+  for (let k = dyns.length - 1; k >= 0; k--) {
+    const d = dyns[k]; d.t -= dt;
+    if (Math.random() < .5) parts.push({ x: d.x, y: d.y - 4, z: 0, vx: hasard(-10, 10), vy: hasard(-14, -4), vz: 0, c: [255, 210, 110], vie: .25, max: .25, p: 1 });
+    sonT -= 0;
+    if (d.t <= 0) { dyns.splice(k, 1); exploser(d.x, d.y); majDyn(); }
+  }
+  for (let i = 0; i < N; i++) if (wet[i] > 0) wet[i] -= dt;
+  majParts(dt);
+  verifier(dt);
+  for (let k = anims.length - 1; k >= 0; k--) {
+    anims[k].t += dt;
+    if (anims[k].t >= 1.5) { const o = anims[k].o; anims.splice(k, 1); majBac(); $("#bac").children[o.id].classList.add("ok"); ton(1200, .08, .06); }
+  }
+  for (let k = textes.length - 1; k >= 0; k--) { textes[k].t -= dt; if (textes[k].t <= 0) textes.splice(k, 1); }
+  secousse *= Math.pow(.004, dt); flash = Math.max(0, flash - dt * 1.6);
+  if (OS.length && OS.every(o => !o || o.trouve) && !anims.length) setTimeout(bilan, 500), fini = true;
+}
+
+// En vue Coupe, l'archéologue (pendu à sa corde) ne traverse pas la matière
+function libre(x, y) {
+  for (let Y = Math.floor(y - 9); Y <= Math.floor(y); Y++) for (let X = Math.floor(x - 2); X <= Math.floor(x + 2); X++) {
+    if (X < 0 || X >= W || Y >= H) return false;
+    if (Y >= 0 && plein[Y * W + X]) return false;
+  }
+  return true;
+}
+
+// ---------- 13. Commandes ----------
+function versMonde(e) {
+  const r = cv.getBoundingClientRect();
+  // au doigt, l'outil travaille un peu au-dessus du doigt pour qu'on voie ce qu'on fait
+  const decal = e.pointerType === "touch" && controle === "doigt" ? 10 : 0;
+  return { x: (e.clientX - r.left) / P, y: (e.clientY - r.top) / P - decal };
+}
+let pointeur = null;
+zone.addEventListener("pointerdown", e => {
+  if (pointeur !== null || fini) return;
+  audio(); pointeur = e.pointerId; zone.setPointerCapture(e.pointerId);
+  doigt = versMonde(e); appui = true; burinT = 0; sonT = 0;
+  if (controle === "doigt") travail = { ...doigt };
+  if (outil === "dynamite") {
+    if (controle === "doigt") poserDynamite(doigt.x, doigt.y);
+    else { etape(0); poserDynamite(travail.x, travail.y); }
+  }
+});
+zone.addEventListener("pointermove", e => { if (e.pointerId === pointeur) doigt = versMonde(e); });
+const lacher = e => { if (e.pointerId === pointeur) { pointeur = null; appui = false; } };
+zone.addEventListener("pointerup", lacher); zone.addEventListener("pointercancel", lacher);
+document.addEventListener("contextmenu", e => e.preventDefault());
+
+document.querySelectorAll(".outil").forEach(b => b.addEventListener("click", () => {
+  outil = b.dataset.o; audio();
+  document.querySelectorAll(".outil").forEach(x => x.classList.toggle("actif", x === b));
+  ton(1500, .03, .04, "square");
+}));
+$("#b-vue").addEventListener("click", () => {
+  vue = vue === "dessus" ? "coupe" : "dessus";
+  $("#b-vue b").textContent = vue === "dessus" ? "Dessus" : "Coupe";
+  nouveauPlateau();
+});
+$("#b-ctrl").addEventListener("click", () => {
+  controle = controle === "doigt" ? "archeo" : "doigt";
+  $("#b-ctrl b").textContent = controle === "doigt" ? "Doigt" : "Archéologue";
+});
+$("#nouveau").addEventListener("click", nouveauPlateau);
+$("#bi-ok").addEventListener("click", nouveauPlateau);
+
+nouveauPlateau();
+requestAnimationFrame(boucle);
+</script>
+</body>
+</html>
