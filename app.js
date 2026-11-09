@@ -1,8 +1,8 @@
 "use strict";
 // =========================================================
-// Tunnel — vue de dessus (v0.12)
+// Tunnel — vue de dessus (v0.13)
 //
-// Le monde est fait de petits pixels (3 px à l'écran) : chaque outil peut les enlever un par un.
+// Le monde est fait de petits pixels (zoom réglable, ~2,4 px à l'écran) : chaque outil peut les enlever un par un.
 // - On part d'une clairière, au pied d'une falaise ; l'entrée de la mine est dans la paroi.
 // - Plus on s'éloigne de l'entrée, plus la roche est dure (×1,4 par zone) et plus le butin est riche.
 // - 4 outils : jet d'énergie (loin, rapide, abîme les objets), pinceau (au contact, doux),
@@ -11,10 +11,10 @@
 // Tout est dessiné dans une petite image (1 pixel = 1 pixel du monde), agrandie ×3 sans flou.
 // =========================================================
 
-const VERSION = "0.12.0";
+const VERSION = "0.13.0";
 
 // ---------- 1. Le monde ----------
-const P = 3;                          // taille d'un pixel du monde à l'écran (px)
+let P = 3;                            // taille d'un pixel du monde à l'écran (px) : réglable (Zoom)
 const W = 480, H = 1000, N = W * H;   // taille du monde (pixels)
 const EX = 240;                       // milieu de l'entrée de la mine
 const FAL_HAUT = 800, FAL_BAS = 860;  // la falaise (entre la mine au-dessus et la clairière en dessous)
@@ -45,8 +45,15 @@ const BUTINS = {
   amethyste: { nom: "Améthyste",      val: 20, c: [206, 146, 255] },
   piece:     { nom: "Pièce ancienne", val: 35, c: [240, 204, 96] },
   rubis:     { nom: "Rubis",          val: 60, c: [244, 72, 84] },
-  bombe:     { nom: "Bombe",          val: 0,  c: [70, 66, 92] }
+  bombe:     { nom: "Bombe",          val: 0,  c: [70, 66, 92] },
+  // Miettes : chaque pixel cassé en lâche une (comme dans l'ancienne version). Elles se comptent, sans valeur.
+  m_terre:   { nom: "Terre",          val: 0,  c: [139, 94, 60],   miette: true },
+  m_roche:   { nom: "Roche",          val: 0,  c: [118, 116, 124], miette: true },
+  m_dure:    { nom: "Roche dure",     val: 0,  c: [88, 84, 98],    miette: true },
+  m_mousse:  { nom: "Mousse",         val: 0,  c: [96, 140, 70],   miette: true },
+  m_minerai: { nom: "Poussière de minerai", val: 0, c: [236, 188, 70], miette: true }
 };
+const MIETTE = { [TERRE]: "m_terre", [ROCHE]: "m_roche", [DURE]: "m_dure", [MOUSSE]: "m_mousse", [MINERAI]: "m_minerai" };
 
 // Les objets enfouis (collection). r = première zone où on peut les trouver. Chaque lettre = 3 × 3 pixels.
 const OS = { X: [234, 223, 196], o: [163, 150, 117], w: [255, 250, 235] };
@@ -278,7 +285,10 @@ function creerObjet(cx, cy, modele) {
 const lire = (cle, def) => { try { const v = localStorage.getItem(cle); return v === null ? def : JSON.parse(v); } catch (e) { return def; } };
 const ecrire = (cle, v) => { try { localStorage.setItem(cle, JSON.stringify(v)); } catch (e) {} };
 const reduit = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const REG = Object.assign({ son: true, vibration: "fort", effets: reduit ? "simples" : "complets" }, lire("tunnel2-reglages", {}));
+// zoom = taille d'un pixel du monde (px) ; jetLarge = largeur du rayon (pixels du monde, le mineur fait 8 de large) ;
+// jetVite = force du rayon (1 à 10) ; portee = distance max de la pioche et du pinceau autour de la main
+const REG = Object.assign({ son: true, vibration: "fort", effets: reduit ? "simples" : "complets", zoom: 2.4, jetLarge: 11, jetVite: 4, portee: 16 }, lire("tunnel2-reglages", {}));
+P = REG.zoom;
 const sauverReglages = () => ecrire("tunnel2-reglages", REG);
 const FX = () => REG.effets === "simples" ? 0.35 : 1; // force des secousses / quantité d'éclats
 let outil = lire("tunnel2-outil", "jet");
@@ -287,16 +297,20 @@ const sac = Object.assign({ comptes: {}, tresor: 0 }, lire("tunnel2-sac", {}));
 if (sac.comptes.bombe === undefined) sac.comptes.bombe = 3; // 3 bombes pour commencer
 const collection = lire("tunnel2-collection", {}); // { nom: { n, meilleure } }
 const sauverSac = () => ecrire("tunnel2-sac", sac);
+let sacASauver = false; // les miettes arrivent par centaines : on enregistre le sac au plus une fois par seconde
+setInterval(() => { if (sacASauver) { sacASauver = false; sauverSac(); } }, 1000);
+addEventListener("pagehide", () => { if (sacASauver) sauverSac(); });
 
 // ---------- 5. Le mineur ----------
-const SPRITE = ["...KKKKK....", "..KHYYYYKKK.", ".KHYYYYYKLLK", ".KYYYYYYKLLK", "KyyyyyyyyyyK", "KNNSSSSSSSSK", "KNSSSWESWESK", "KsSSSEESEESK", "KsSSSSPSSPSK", ".KKssssssKK.", "..KRRRRRRK..", ".KSBGBBGBSK.", ".KsBBBBBBsK.", "..KBBBBBBK..", "..KbBBBBbK..", "..KbbKKbbK.."];
-const JAMBES = [["..KDDKKDDK..", "..KKK..KKK.."], [".KDDK..KDDK.", ".KKK....KKK."]];
+// Mineur : 10 × 15 pixels (13 lignes de corps + 2 de jambes, qui alternent en marchant)
+const SPRITE = ["..KKKK....", ".KHYYYKKK.", "KHYYYYKLLK", "KyyyyyyyyK", "KNSSSSSSSK", "KNSWESWESK", "KsSEESEESK", ".KsPSSPsK.", "..KRRRRK..", ".KSBGGBSK.", ".KsBBBBsK.", "..KBBBBK..", "..KbKKbK.."];
+const JAMBES = [["..KDKKDK..", "..KK..KK.."], [".KDK..KDK.", ".KK....KK."]];
 const PAL = { K: [29, 23, 38], H: [255, 224, 138], Y: [242, 178, 50], y: [194, 127, 26], L: [255, 246, 200], N: [107, 70, 48], S: [246, 207, 164], s: [214, 160, 115], W: [255, 255, 255], E: [38, 48, 79], P: [242, 154, 134], R: [217, 86, 60], B: [79, 134, 204], b: [51, 95, 158], G: [255, 213, 106], D: [90, 61, 46] };
 const m = { x: DEPART.x, y: DEPART.y, vx: 0, vy: 0, px: 0, py: 0, sens: 1, pas: 0, recul: [0, 0] };
 // Collision : seulement les pieds (vue de dessus)
 function touche(x, y) {
   for (let cy = Math.floor(y - 3); cy <= Math.floor(y - 0.01); cy++)
-    for (let cx = Math.floor(x - 4); cx <= Math.floor(x + 3.99); cx++) if (solide(cx, cy)) return true;
+    for (let cx = Math.floor(x - 3); cx <= Math.floor(x + 2.99); cx++) if (solide(cx, cy)) return true;
   return false;
 }
 function bouger(dx, dy) {
@@ -306,7 +320,7 @@ function bouger(dx, dy) {
     if (dy) { m.y += dy / n; if (touche(m.x, m.y)) { m.y -= dy / n; dy = 0; } }
   }
 }
-const mainX = () => m.x + m.sens * 4, mainY = () => m.y - 8; // la main (buse du jet, manche des outils)
+const mainX = () => m.x + m.sens * 3, mainY = () => m.y - 7; // la main (buse du jet, manche des outils)
 
 // ---------- 6. Effets ----------
 const particules = [], anneaux = [], textes = [], butins = [], bombes = [], envols = [];
@@ -341,8 +355,9 @@ function casser(i, avecEclat) {
   if (zoneM[i] >= 0) compter(zoneM[i]);
   if (zoneC[i] >= 0) compter(zoneC[i]);
   // Butin caché dans la matière : minerai surtout ; parfois une bombe dans la roche
+  miette(x, y, t, i);
   const r = Math.random();
-  if (t === MINERAI && r < 0.07) lacherButin(x + 0.5, y + 0.5, REGIONS[reg[i]].butin);
+  if (t === MINERAI && r < 0.07) { lacherButin(x + 0.5, y + 0.5, REGIONS[reg[i]].butin); jaillir(x + 0.5, y + 0.5, REGIONS[reg[i]].butin); }
   else if (t === DURE && r < 0.0025) lacherButin(x + 0.5, y + 0.5, "bombe");
   else if (t === ROCHE && r < 0.0007) lacherButin(x + 0.5, y + 0.5, "bombe");
   else if ((t === ROCHE || t === DURE) && r < 0.004) lacherButin(x + 0.5, y + 0.5, "caillou");
@@ -361,15 +376,18 @@ function compter(id) { const z = zones[id]; if (z.fait) return; z.faits++; if (z
 
 // ---------- 8. Les outils ----------
 let doigt = null, tir = null;   // tir = ce que fait l'outil à cette image (dessin, son, lumière)
-const PORTEE = 24;             // pinceau et pioche : distance max de la main
 const pioche = { t: 9, anim: 0, angle: 0 };
 let vibreTemps = 0, brosseTemps = 0;
 function pointDoigt() { return [camX + doigt.sx / P, camY + doigt.sy / P]; }
-// Pinceau / pioche : le point visé, ramené à portée de main
+// Pinceau / pioche : visée « démultipliée » autour du mineur. Le doigt peut être n'importe où :
+// sa direction donne le côté, et sa distance au mineur (jusqu'à 130 px d'écran) règle la distance de l'outil
+// (de la main jusqu'à la portée choisie). Un grand geste du doigt = un petit geste précis de l'outil.
+const VISEE_ECRAN = 130;
 function aPortee(wx, wy) {
   const hx = mainX(), hy = mainY(), d = Math.hypot(wx - hx, wy - hy);
-  if (d <= PORTEE) return [wx, wy, false];
-  return [hx + (wx - hx) * PORTEE / d, hy + (wy - hy) * PORTEE / d, true];
+  if (d < 0.01) return [hx, hy, false];
+  const r = REG.portee * Math.min(1, d * P / VISEE_ECRAN);
+  return [hx + (wx - hx) * r / d, hy + (wy - hy) * r / d, d * P > VISEE_ECRAN];
 }
 function rayon(ox, oy, a, longueur) {
   const dx = Math.cos(a), dy = Math.sin(a);
@@ -407,15 +425,18 @@ function utiliserOutil(dt, temps) {
   if (outil === "jet") {
     const ox = mainX(), oy = mainY(), a = Math.atan2(wy - oy, wx - ox);
     m.sens = Math.cos(a) >= 0 ? 1 : -1;
-    tir = { sorte: "jet", traits: [], impact: null, mat: VIDE };
-    const touches = new Set();
-    for (const dec of [-1, 0, 1]) {
+    // Un gros rayon : des rayons côte à côte (1 pixel d'écart) sur toute la largeur réglée.
+    // Chacun ronge le mur là où il le touche : le front avance d'un bloc, ce qui creuse un couloir où le mineur passe.
+    tir = { sorte: "jet", traits: [], impact: null, mat: VIDE, large: REG.jetLarge };
+    const touches = new Set(), demi = (REG.jetLarge - 1) / 2, q = 0.3 * REG.jetVite * dt;
+    for (let dec = -demi; dec <= demi + 0.01; dec++) {
       const px = ox - Math.sin(a) * dec, py = oy + Math.cos(a) * dec;
       const [hx, hy, , t, i] = rayon(px, py, a, 80);
       if (t === OBJET) touches.add(zoneO[i]);
-      else if (t !== VIDE) disque(hx, hy, 2.6, 5 * dt);
-      tir.traits.push([px, py, hx, hy, dec === 0]);
-      if (dec === 0) { tir.impact = t !== VIDE ? [hx, hy] : null; tir.mat = t; }
+      else if (t !== VIDE) disque(hx, hy, 1.6, q);
+      const centre = Math.abs(dec) < 0.6;
+      tir.traits.push([px, py, hx, hy, Math.abs(dec) <= demi - 1.5 || centre, centre]);
+      if (centre) { tir.impact = t !== VIDE ? [hx, hy] : null; tir.mat = t; }
     }
     for (const id of touches) if (id >= 0) abimerObjet(zones[id], dt);
     m.recul = Math.random() < 0.5 ? [-Math.round(Math.cos(a)), -Math.round(Math.sin(a))] : [0, 0];
@@ -540,7 +561,43 @@ function exploser(x, y) {
 // ---------- 10. Petit butin (sac) ----------
 function lacherButin(x, y, k) {
   const a = Math.random() * Math.PI * 2, v = 20 + Math.random() * 30;
-  butins.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k, t: 0 });
+  butins.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k, t: 0, n: 1 });
+}
+// Une miette par pixel cassé, de la couleur du pixel. Au-delà de 700 par terre, on les regroupe.
+const MAX_BUTINS = 700;
+function miette(x, y, t, i) {
+  const k = MIETTE[t]; if (!k) return;
+  if (butins.length >= MAX_BUTINS) {
+    for (let j = butins.length - 1; j >= butins.length - 80; j--) {
+      const b = butins[j];
+      if (b.k === k && Math.abs(b.x - x) < 5 && Math.abs(b.y - y) < 5) { b.n++; return; }
+    }
+    sac.comptes[k] = (sac.comptes[k] || 0) + 1; sacASauver = true; // sinon : directement dans le sac
+    return;
+  }
+  const a = Math.random() * Math.PI * 2, v = 8 + Math.random() * 26, e = 0.85 + Math.random() * 0.35;
+  butins.push({ x: x + 0.5, y: y + 0.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k, t: 0, n: 1, c: [coul[i * 3] * e, coul[i * 3 + 1] * e, coul[i * 3 + 2] * e] });
+}
+// Rang de rareté (0 = rien de spécial) : règle la force des effets
+const RANG = { pepite: 1, eclat: 2, amethyste: 3, piece: 4, rubis: 5 };
+// Un trésor sort du mur : éclat de lumière, gerbe de sa couleur, accord qui monte, secousse, et petit ralenti pour les gros
+const eclairs = []; // flashs de lumière brefs [x, y, t, force, r, g, b]
+let ralenti = 0;
+function jaillir(x, y, k) {
+  const rg = RANG[k]; if (!rg) return;
+  const c = BUTINS[k].c;
+  eclairs.push([x, y, 0, 0.6 + rg * 0.25, c[0] / 255, c[1] / 255, c[2] / 255]);
+  anneaux.push({ x, y, t: 0, vite: true, petit: true, c });
+  const n = Math.round((10 + rg * 6) * FX());
+  for (let j = 0; j < n; j++) {
+    const a = Math.random() * Math.PI * 2, v = 30 + Math.random() * (40 + rg * 15);
+    particule(x, y, Math.cos(a) * v, Math.sin(a) * v, j % 3 === 2 ? [255, 255, 240] : c, 0.4 + Math.random() * 0.5, true);
+  }
+  accord(rg);
+  secousse = Math.max(secousse, 0.06 + rg * 0.04);
+  vib(15 + rg * 14, 8 + rg * 5);
+  if (rg >= 3 && REG.effets !== "simples" && !reduit) ralenti = Math.max(ralenti, 0.12 + rg * 0.06);
+  texte(x, y - 8, BUTINS[k].nom + " !", "rgb(" + c.join(",") + ")");
 }
 const RAYON_AIMANT = () => 26 + (compagnonActif ? [0, 8, 16][stadeCompagnon(compagnonActif)] : 0);
 let serie = 0, serieTemps = 0;
@@ -561,16 +618,32 @@ function majButins(dt) {
       if (solide(Math.floor(b.x), Math.floor(ny))) b.vy *= -0.4; else b.y = ny;
       b.vx *= 1 - dt * 5; b.vy *= 1 - dt * 5;
     }
-    if (d < 5) { butins.splice(k, 1); ramasser(b.k); }
+    if (d < 5) { butins.splice(k, 1); ramasser(b.k, b.n); }
   }
 }
-function ramasser(k) {
+// Miettes : un petit « tic » (au plus un toutes les 35 ms) et un « +N » qui se cumule
+let dernierTic = 0;
+function ramasserMiette(k, n) {
+  sac.comptes[k] = (sac.comptes[k] || 0) + n; sacASauver = true;
+  const t = textes.find(t => t.k === k && t.t < 0.45);
+  if (t) { t.n += n; t.txt = "+" + t.n; t.t = Math.min(t.t, 0.12); }
+  else { const c = BUTINS[k].c; textes.push({ x: m.x + (Math.random() - 0.5) * 10, y: m.y - 20, txt: "+" + n, n, k, c: "rgb(" + c.map(v => Math.min(255, v * 1.5) | 0).join(",") + ")", t: 0, petit: true }); }
+  const ms = performance.now();
+  if (ms - dernierTic > 35) { dernierTic = ms; note(1300 + Math.random() * 200 + serie * 30, "triangle", 0.025, 0.04); }
+}
+function ramasser(k, n = 1) {
   const B = BUTINS[k];
+  if (B.miette) { ramasserMiette(k, n); return; }
   sac.comptes[k] = (sac.comptes[k] || 0) + 1; sauverSac();
   serie = Math.min(serie + 1, 14); serieTemps = 0.8;
   if (k === "bombe") { majBombes(); texte(m.x, m.y - 22, "+1 bombe", "#ffb35a"); popBouton(document.querySelector('[data-outil="bombe"]')); }
-  else texte(m.x + (Math.random() - 0.5) * 8, m.y - 22, "+" + B.val, "rgb(" + B.c.join(",") + ")");
-  bip(serie); vib(8, 4);
+  else texte(m.x + (Math.random() - 0.5) * 8, m.y - 22, "+" + B.val, "rgb(" + B.c.join(",") + ")", (RANG[k] || 0) >= 3);
+  const rg = RANG[k] || 0;
+  if (rg) { // trésor dans le sac : accord, petite gerbe autour du mineur, vibration selon la rareté
+    accord(rg, true); eclats(m.x, m.y - 8, B.c, 6 + rg * 3, 40);
+    eclairs.push([m.x, m.y - 8, 0, 0.4 + rg * 0.15, B.c[0] / 255, B.c[1] / 255, B.c[2] / 255]);
+    vib(12 + rg * 8, 6 + rg * 3);
+  } else { bip(serie); vib(8, 4); }
   majSac();
 }
 
@@ -599,6 +672,7 @@ function terminer(z) {
   const qual = z.degats < 0.35 ? 0 : z.degats < 1.6 ? 1 : 2;
   for (const i of z.pixels) type[i] = VIDE;
   envols.push({ z, qual, t: 0 });
+  if (REG.effets !== "simples" && !reduit) ralenti = Math.max(ralenti, 0.45);
 }
 function finEnvol(e) {
   const z = e.z, M = z.modele, val = Math.round(M.val * QUAL_MULT[e.qual]);
@@ -673,6 +747,17 @@ function bruitCourt(f, q, g, duree, versF) {
   s.connect(fi); fi.connect(gg); gg.connect(maitre); s.start(t, Math.random() * 0.5); s.stop(t + duree + 0.05);
 }
 const bip = n => note(660 * Math.pow(2, n / 12), "square", 0.05, 0.08);
+// Accord qui monte : plus de notes et plus aigu selon la rareté (rang 1 à 5). « court » = version ramassage.
+const GAMME = [0, 4, 7, 12, 16, 19, 24];
+function accord(rg, court) {
+  const base = 523 * Math.pow(2, (rg - 1) * 2 / 12), n = court ? 2 + Math.min(2, rg >> 1) : 2 + rg;
+  for (let j = 0; j < n; j++) {
+    const f = base * Math.pow(2, GAMME[j] / 12), r = j * (court ? 0.04 : 0.06);
+    note(f, "triangle", 0.14, court ? 0.25 : 0.5, r);
+    if (rg >= 3) note(f * 2, "sine", 0.05, court ? 0.2 : 0.45, r + 0.01); // reflet cristallin pour les gros
+  }
+  if (!court && rg >= 4) note(base / 2, "sine", 0.18, 0.7); // petite basse pour les plus rares
+}
 const ding = () => { note(988, "triangle", 0.22, 0.6); note(1480, "triangle", 0.2, 0.6, 0.09); note(1976, "triangle", 0.18, 0.6, 0.18); };
 const sonPioche = t => { bruitCourt(t === ROCHE || t === DURE ? 2600 : 1100, 2, 0.5, 0.12); note(t === ROCHE || t === DURE ? 1700 : 600, "square", 0.04, 0.05); };
 const sonFissure = () => { bruitCourt(5200, 6, 0.25, 0.08); note(2400, "square", 0.03, 0.04); };
@@ -735,8 +820,8 @@ function majLumieres(temps) {
   if (tir && tir.sorte === "jet") {
     const fl = 0.85 + Math.random() * 0.3;
     lumieres.push([mainX(), mainY(), 22, 0.6 * fl, 1, 0.7, 0.4]);
-    if (tir.impact) lumieres.push([tir.impact[0], tir.impact[1], 46, 1.4 * fl, 1, 0.68, 0.32]);
-    const t = tir.traits[1];
+    if (tir.impact) lumieres.push([tir.impact[0], tir.impact[1], 40 + tir.large * 1.5, 1.4 * fl, 1, 0.68, 0.32]);
+    const t = tir.traits[tir.traits.length >> 1];
     for (const f of [0.35, 0.7]) lumieres.push([t[0] + (t[2] - t[0]) * f, t[1] + (t[3] - t[1]) * f, 22, 0.5 * fl, 1, 0.72, 0.4]);
   }
   let n = 0;
@@ -744,6 +829,10 @@ function majLumieres(temps) {
   for (const z of zones) if (z.brille > 0) lumieres.push([z.cx, z.cy, 70, z.brille, 1, 0.95, 0.75]);
   for (const b of bombes) if (b.posee) lumieres.push([b.x, b.y, 16, (Math.sin(temps * (b.meche < 0.5 ? 40 : 18)) > 0 ? 0.8 : 0.3), 1, 0.3, 0.2]);
   for (const e of envols) lumieres.push([e.z.cx, e.z.cy, 60, 1.2, 1, 0.92, 0.7]);
+  for (const e of eclairs) { const f = 1 - e[2] / 0.6; lumieres.push([e[0], e[1], 34, e[3] * f * f, e[4], e[5], e[6]]); }
+  // Les trésors par terre luisent un peu (on les voit dans le noir)
+  let nb = 0;
+  for (const b of butins) if (RANG[b.k] && nb < 8) { lumieres.push([b.x, b.y, 10, 0.35 + 0.1 * Math.sin(temps * 5 + b.x), BUTINS[b.k].c[0] / 255, BUTINS[b.k].c[1] / 255, BUTINS[b.k].c[2] / 255]); nb++; }
   if (flashBoum && flashBoum.t < 0.4) lumieres.push([flashBoum.x, flashBoum.y, 110, 2.6 * (1 - flashBoum.t / 0.4), 1, 0.75, 0.45]);
 }
 function lumiereEn(x, y) {
@@ -754,9 +843,12 @@ function lumiereEn(x, y) {
 
 function dessinerMonde(temps) {
   const ox = Math.floor(camX), oy = Math.floor(camY);
-  const Ls = lumieres.filter(L => L[0] + L[2] > ox && L[0] - L[2] < ox + BW && L[1] + L[2] > oy && L[1] - L[2] < oy + BH), nL = Ls.length;
+  const Ls = lumieres.filter(L => L[0] + L[2] > ox && L[0] - L[2] < ox + BW && L[1] + L[2] > oy && L[1] - L[2] < oy + BH);
+  const Lr = []; // lumières qui touchent la ligne en cours (plus rapide : on ne teste que celles-là)
   for (let by = 0; by < BH; by++) {
     const y = oy + by, AMB = ambiance(y);
+    let nL = 0;
+    for (const L of Ls) if (Math.abs(y - L[1]) < L[2]) Lr[nL++] = L;
     for (let bx = 0; bx < BW; bx++) {
       const x = ox + bx;
       let r, g, b, em = 0, er = 0, eg = 0, eb = 0;
@@ -767,8 +859,12 @@ function dessinerMonde(temps) {
         r = coul[i * 3]; g = coul[i * 3 + 1]; b = coul[i * 3 + 2];
         if (t === OBJET) {
           const z = zones[zoneO[i]];
-          const f = z.faits / (z.total || 1), k = 0.3 + 0.7 * f;
+          // Silhouette nette dès le départ (claire, contour d'encre, légère lueur) : on la repère de loin,
+          // et on ne la confond pas avec le minerai (qui, lui, n'a ni contour ni lueur)
+          const f = z.faits / (z.total || 1), k = 0.75 + 0.25 * f;
           r *= k; g *= k; b *= k;
+          em = 0.5 + 0.12 * Math.sin(temps * 2.5 + z.cx); er = r; eg = g; eb = b;
+          if (typeEn(x - 1, y) !== OBJET || typeEn(x + 1, y) !== OBJET || typeEn(x, y - 1) !== OBJET || typeEn(x, y + 1) !== OBJET) { r = 29; g = 23; b = 38; em = 0; }
           if (z.degats > 0 && hache(x, y, 31) < z.degats * 0.12) { r *= 0.35; g *= 0.3; b *= 0.3; } // fissures
           if (z.flash > 0) { em = z.flash * 2; er = 255; eg = 90; eb = 70; }
         } else if (cassable(t)) {
@@ -804,7 +900,7 @@ function dessinerMonde(temps) {
       // Lumière
       let lr = AMB, lg = AMB, lb = AMB < 1 ? AMB * 1.3 : 1;
       for (let n = 0; n < nL; n++) {
-        const L = Ls[n], dx = x - L[0], dy = y - L[1], d2 = dx * dx + dy * dy, r2 = L[2] * L[2];
+        const L = Lr[n], dx = x - L[0], dy = y - L[1], d2 = dx * dx + dy * dy, r2 = L[2] * L[2];
         if (d2 < r2) { const f = 1 - d2 / r2, q = f * f * L[3]; lr += q * L[4]; lg += q * L[5]; lb += q * L[6]; }
       }
       if (AMB >= 1) { lr = Math.min(lr, 1.25); lg = Math.min(lg, 1.25); lb = Math.min(lb, 1.25); }
@@ -824,6 +920,12 @@ function dessinerMonde(temps) {
   for (const b of butins) {
     const B = BUTINS[b.k], l = Math.max(0.55, Math.min(1.3, lumiereEn(b.x, b.y)));
     if (b.k === "bombe") { dessinerBombe(b.x, b.y, 0, l, temps, false); continue; }
+    if (B.miette) { // miette : 1 pixel (2 si elle en regroupe plusieurs), un peu plus claire que le mur
+      const ll = Math.max(0.75, l);
+      plot(b.x, b.y, b.c, ll);
+      if (b.n > 1) plot(b.x + 1, b.y, b.c, ll * 0.8);
+      continue;
+    }
     const c = B.c, cl = [c[0] * 1.4, c[1] * 1.4, c[2] * 1.4], fo = [c[0] * 0.65, c[1] * 0.65, c[2] * 0.65];
     const brille = Math.sin(temps * 6 + b.x) > 0.85;
     const G = [".KKK.", "KwccK", "KcccK", "KcffK", ".KKK."];
@@ -845,9 +947,9 @@ function dessinerMonde(temps) {
   // Mineur (mêmes pixels que le monde)
   const cadre = Math.hypot(m.vx, m.vy) > 3 ? Math.floor(m.pas * 8) % 2 : 0, lignes = SPRITE.concat(JAMBES[cadre]);
   const rc = tir && tir.sorte === "jet" ? m.recul : [0, 0];
-  const mx = Math.round(m.x) - 6 - ox + rc[0], my = Math.round(m.y) - 18 - oy - (cadre ? 1 : 0) + rc[1];
-  for (let y = 0; y < 18; y++) for (let x = 0; x < 12; x++) {
-    const ch = lignes[y][m.sens > 0 ? x : 11 - x];
+  const mx = Math.round(m.x) - 5 - ox + rc[0], my = Math.round(m.y) - 15 - oy - (cadre ? 1 : 0) + rc[1];
+  for (let y = 0; y < 15; y++) for (let x = 0; x < 10; x++) {
+    const ch = lignes[y][m.sens > 0 ? x : 9 - x];
     if (ch === ".") continue;
     const px = mx + x, py = my + y;
     if (px < 0 || py < 0 || px >= BW || py >= BH) continue;
@@ -867,7 +969,7 @@ function dessinerMonde(temps) {
     for (let k = -1; k <= 1; k++) for (let j = 0; j <= 1; j++) plot(tir.x + Math.cos(a) * j - Math.sin(a) * k, tir.y + Math.sin(a) * j + Math.cos(a) * k, [236, 214, 160]);
   }
   // Jet d'énergie : cœur blanc-jaune, halo orange, « pulsations » qui avancent
-  if (tir && tir.sorte === "jet") for (const [ax, ay, bx2, by2, coeur] of tir.traits) {
+  if (tir && tir.sorte === "jet") for (const [ax, ay, bx2, by2, coeur, centre] of tir.traits) {
     const lg2 = Math.hypot(bx2 - ax, by2 - ay), n = Math.ceil(lg2 * 2), nx = -(by2 - ay) / (lg2 || 1), ny = (bx2 - ax) / (lg2 || 1);
     for (let k = 0; k <= n; k++) {
       const f = k / n, px = ax + (bx2 - ax) * f, py = ay + (by2 - ay) * f, d = f * lg2;
@@ -878,7 +980,7 @@ function dessinerMonde(temps) {
         if (Math.random() < 0.9) plotAdd(px - nx, py - ny, [255, 140, 50], 0.55);
       } else if (Math.random() < 0.7) plotAdd(px, py, [255, 150, 60], 0.5);
     }
-    if (coeur && tir.impact) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if (centre && tir.impact) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
       const d = Math.hypot(dx, dy); if (d <= 2.2) plotAdd(tir.impact[0] + dx, tir.impact[1] + dy, [255, 230, 160], 1 - d / 2.6);
     }
   }
@@ -914,8 +1016,8 @@ function dessinerDessus(temps) {
     }
   }
   for (const o of anneaux) {
-    const duree = o.vite ? 0.5 : 0.8, r = o.t * (o.vite ? 160 : 110) * P, al = 1 - o.t / duree;
-    cd.strokeStyle = "rgba(255,240,200," + al + ")"; cd.lineWidth = 5 * al + 1;
+    const duree = o.vite ? 0.5 : 0.8, r = o.t * (o.petit ? 50 : o.vite ? 160 : 110) * P, al = Math.max(0, 1 - o.t / duree);
+    cd.strokeStyle = o.c ? "rgba(" + o.c.join(",") + "," + al + ")" : "rgba(255,240,200," + al + ")"; cd.lineWidth = (o.petit ? 3 : 5) * al + 1;
     cd.beginPath(); cd.arc(E(o.x), F(o.y), r, 0, Math.PI * 2); cd.stroke();
   }
   // Curseur du pinceau et de la pioche (pointillé si le doigt est trop loin : l'outil s'arrête au bout du bras)
@@ -928,7 +1030,7 @@ function dessinerDessus(temps) {
   for (const t of textes) {
     const k = t.t < 0.15 ? 0.6 + t.t * 4 : 1.2 - Math.min(0.2, t.t - 0.15), al = t.t < 0.7 ? 1 : 1 - (t.t - 0.7) * 2;
     cd.save(); cd.globalAlpha = Math.max(0, al); cd.translate(E(t.x), F(t.y) - t.t * 26); cd.scale(k, k);
-    cd.font = "bold " + (t.gros ? 22 : 13) + "px monospace"; cd.textAlign = "center"; cd.lineWidth = t.gros ? 5 : 3; cd.strokeStyle = "#1d1726"; cd.strokeText(t.txt, 0, 0);
+    cd.font = "bold " + (t.gros ? 22 : t.petit ? 11 : 13) + "px monospace"; cd.textAlign = "center"; cd.lineWidth = t.gros ? 5 : 3; cd.strokeStyle = "#1d1726"; cd.strokeText(t.txt, 0, 0);
     cd.fillStyle = t.c; cd.fillText(t.txt, 0, 0); cd.restore();
   }
   // Objets déterrés : ils s'élèvent, tournent un peu dans un halo de rayons, puis filent dans le sac
@@ -1002,7 +1104,7 @@ function majCompagnon(dt) {
   const tx = m.x - dirX * 16, ty = m.y - dirY * 12, k = Math.min(1, dt * 5), avant = comp.x;
   comp.x += (tx - comp.x) * k; comp.y += (ty - comp.y) * k;
   if (Math.abs(comp.x - avant) > 0.05) comp.sens = comp.x > avant ? 1 : -1;
-  const cote = 64;
+  const cote = Math.round(64 * P / 3);
   img.style.width = img.style.height = cote + "px";
   img.style.transform = "translate(" + ((comp.x - camX) * P - cote / 2 + sx).toFixed(1) + "px," + ((comp.y - camY) * P - cote * 29 / 32 + sy).toFixed(1) + "px)" + (comp.sens > 0 ? " scaleX(-1)" : "");
   img.style.filter = "brightness(" + Math.min(1.2, lumiereEn(comp.x, comp.y - 6)).toFixed(2) + ")";
@@ -1046,6 +1148,18 @@ function ligneChoix(parent, libelle, cle, choix) {
   }
   parent.appendChild(l);
 }
+// Curseur (glissière) : libellé, glissière, valeur affichée
+function ligneCurseur(parent, libelle, cle, min, max, pas, format, quandChange) {
+  const l = document.createElement("div"); l.className = "ligne curseur";
+  l.innerHTML = `<span>${libelle}</span><input type="range" min="${min}" max="${max}" step="${pas}" value="${REG[cle]}"><b></b>`;
+  const ent = l.querySelector("input"), val = l.querySelector("b");
+  val.textContent = format(REG[cle]);
+  ent.addEventListener("input", () => {
+    REG[cle] = +ent.value; val.textContent = format(REG[cle]); sauverReglages();
+    if (quandChange) quandChange(REG[cle]);
+  });
+  parent.appendChild(l);
+}
 function ligneLien(parent, html, action) {
   const l = document.createElement("div"); l.className = "ligne lien"; l.innerHTML = `<span>${html}</span>`;
   l.addEventListener("click", action); parent.appendChild(l);
@@ -1055,6 +1169,10 @@ function ouvrirReglages() {
     ligneChoix(c, "Son", "son", [[true, "Activé"], [false, "Coupé"]]);
     ligneChoix(c, "Vibration", "vibration", [["fort", "Fort"], ["leger", "Léger"], ["coupe", "Coupé"]]);
     ligneChoix(c, "Effets", "effets", [["complets", "Complets"], ["simples", "Simples"]]);
+    ligneCurseur(c, "Zoom", "zoom", 1.8, 3.6, 0.2, v => "×" + v.toFixed(1), v => { P = v; redim(); });
+    ligneCurseur(c, "Largeur du jet", "jetLarge", 3, 17, 2, v => v);
+    ligneCurseur(c, "Vitesse du jet", "jetVite", 1, 10, 1, v => v);
+    ligneCurseur(c, "Portée pinceau/pioche", "portee", 8, 32, 2, v => v);
     const nom = compagnonActif ? LIGNES_COMPAGNON[compagnonActif].noms[stadeCompagnon(compagnonActif)] : "Aucun";
     ligneLien(c, `Compagnon <small>· ${nom}</small>`, ouvrirCompagnon);
     ligneLien(c, "Nouvelle mine", () => { if (confirm("Recommencer dans une nouvelle mine ? (le sac et les trouvailles sont gardés)")) { panneau.hidden = true; nouvelleMine(true); } });
@@ -1065,7 +1183,7 @@ function ouvrirReglages() {
 function miniButin(k) {
   const can = document.createElement("canvas"); can.width = 5; can.height = 5;
   const x = can.getContext("2d"), c = BUTINS[k].c;
-  const G = k === "bombe" ? ["..s..", ".KKK.", "KwbbK", "KbbbK", ".KKK."] : [".KKK.", "KwccK", "KcccK", "KcffK", ".KKK."];
+  const G = BUTINS[k].miette ? [".....", ".KKK.", "KcccK", ".KfK.", "....."] : k === "bombe" ? ["..s..", ".KKK.", "KwbbK", "KbbbK", ".KKK."] : [".KKK.", "KwccK", "KcccK", "KcffK", ".KKK."];
   G.forEach((l, j) => [...l].forEach((ch, i) => {
     if (ch === ".") return;
     const col = ch === "K" ? [29, 23, 38] : ch === "w" ? (k === "bombe" ? [150, 146, 176] : [c[0] * 1.4, c[1] * 1.4, c[2] * 1.4]) : ch === "f" ? [c[0] * 0.65, c[1] * 0.65, c[2] * 0.65] : ch === "s" ? [255, 200, 90] : c;
@@ -1080,7 +1198,7 @@ function ouvrirSac() {
       if (!n && k !== "bombe") continue;
       const l = document.createElement("div"); l.className = "butin";
       l.appendChild(miniButin(k));
-      l.insertAdjacentHTML("beforeend", `<span>${BUTINS[k].nom}</span><b>× ${n}</b><small>${k === "bombe" ? "" : n * BUTINS[k].val}</small>`);
+      l.insertAdjacentHTML("beforeend", `<span>${BUTINS[k].nom}</span><b>× ${n}</b><small>${BUTINS[k].val ? n * BUTINS[k].val : ""}</small>`);
       c.appendChild(l);
     }
     if (sac.tresor) c.insertAdjacentHTML("beforeend", `<div class="butin"><span style="padding-left:30px">Trouvailles</span><b></b><small>${sac.tresor}</small></div>`);
@@ -1174,8 +1292,8 @@ const regionsVues = new Set();
 function nouvelleMine(nouvelleGraine) {
   if (nouvelleGraine) GRAINE = (Math.random() * 1e6) | 0;
   generer();
-  particules.length = anneaux.length = textes.length = butins.length = bombes.length = envols.length = 0;
-  for (const c of caillouxSol) butins.push({ x: c.x, y: c.y, vx: 0, vy: 0, k: c.k, t: 0 });
+  particules.length = anneaux.length = textes.length = butins.length = bombes.length = envols.length = eclairs.length = 0;
+  for (const c of caillouxSol) butins.push({ x: c.x, y: c.y, vx: 0, vy: 0, k: c.k, t: 0, n: 1 });
   m.x = DEPART.x; m.y = DEPART.y; m.px = m.py = 0; comp.x = m.x - 18; comp.y = m.y;
   regionsVues.clear(); regionVue = -1; dansMine = false;
   camX = m.x - largeur / P / 2; camY = m.y - 8 - hauteur / P / 2;
@@ -1217,6 +1335,8 @@ function etape(dt, temps) {
   }
   for (let k = particules.length - 1; k >= 0; k--) if (particules[k].vie <= 0) particules.splice(k, 1);
   for (const o of anneaux) o.t += dt;
+  for (const e of eclairs) e[2] += dt;
+  for (let k = eclairs.length - 1; k >= 0; k--) if (eclairs[k][2] > 0.6) eclairs.splice(k, 1);
   for (let k = anneaux.length - 1; k >= 0; k--) if (anneaux[k].t > (anneaux[k].vite ? 0.5 : 0.8)) anneaux.splice(k, 1);
   for (const t of textes) t.t += dt;
   for (let k = textes.length - 1; k >= 0; k--) if (textes[k].t > 1.2) textes.splice(k, 1);
@@ -1237,7 +1357,10 @@ function etape(dt, temps) {
 let avant = performance.now();
 function boucle(maintenant) {
   const dt = Math.min(0.05, (maintenant - avant) / 1000); avant = maintenant;
-  etape(dt, maintenant / 1000);
+  // Petit ralenti quand un gros trésor sort (le temps du jeu passe à 30 %, puis revient en douceur)
+  let dtJeu = dt;
+  if (ralenti > 0) { dtJeu = dt * (ralenti > 0.1 ? 0.3 : 0.3 + (0.1 - ralenti) * 7); ralenti -= dt; }
+  etape(dtJeu, maintenant / 1000);
   requestAnimationFrame(boucle);
 }
 addEventListener("resize", redim);

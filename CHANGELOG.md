@@ -1,5 +1,15 @@
 # Tunnel — journal des nouveautés
 
+## 0.13.0 — 2026-11-09
+- **Vue plus large** (dézoom) + curseur **Zoom** dans Réglages.
+- **Jet = un gros rayon**, plus lent : il creuse un couloir où le mineur se faufile. Curseurs **Largeur du jet** et **Vitesse du jet**.
+- **Pinceau et pioche à visée libre** près du mineur : le doigt peut être n'importe où, sa distance règle finement la position de l'outil (grand geste = petit geste précis). Curseur **Portée pinceau/pioche**.
+- **Une miette par pixel cassé** (terre, roche, mousse…), attirée par l'aimant, comptée dans le sac, avec petit « tic » et « +N » qui se cumule.
+- **Trésors plus marquants** selon la rareté : éclat de lumière de leur couleur, gerbe, accord qui monte, secousse et vibration plus fortes, petit ralenti pour les plus rares (et pour les objets déterrés). Ils luisent un peu par terre.
+- **Objets enfouis plus visibles** : silhouette claire dès le départ, contour sombre et légère lueur qui respire (le minerai reste comme avant, sans contour ni lueur : on ne les confond pas).
+- **Mineur un peu plus petit** (10 × 15 pixels au lieu de 12 × 18), pieds plus étroits pour se faufiler.
+- Lumière calculée plus vite (moins de travail par image).
+
 ## 0.12.0 — 2026-11-08
 - **Nouvelle version en vue de dessus** (remplace la vue de côté, gardée à part dans « Réglages › Ancienne version »).
 - **Départ en pleine nature** : clairière (herbe, fleurs, arbres, petit chemin) au pied d'une falaise ; l'entrée de la mine est dans la paroi. Lumière du jour dehors, mine sombre dedans.
