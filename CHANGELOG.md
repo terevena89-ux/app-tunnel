@@ -1,5 +1,9 @@
 # Tunnel — journal des nouveautés
 
+## 0.14.0 — 2026-11-09
+- **Blocs à ramasser** : en creusant, des petits cubes (2×2) de la couleur de la matière sautent du mur, rebondissent, restent un instant par terre puis filent vers le mineur ; parfois un gros cube (4×4, contour sombre) qui vaut 4 et fait un « clac ». Ils ont une petite valeur (terre 1, roche 2, roche dure 3, minerai 4) : le total du sac monte en creusant.
+- **Collision avec les murs du haut** : le mineur s'arrête au pied de la face avant du mur au lieu de grimper dessus.
+
 ## 0.13.0 — 2026-11-09
 - **Vue plus large** (dézoom) + curseur **Zoom** dans Réglages.
 - **Jet = un gros rayon**, plus lent : il creuse un couloir où le mineur se faufile. Curseurs **Largeur du jet** et **Vitesse du jet**.

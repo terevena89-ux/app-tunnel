@@ -1,6 +1,6 @@
 "use strict";
 // =========================================================
-// Tunnel — vue de dessus (v0.13)
+// Tunnel — vue de dessus (v0.14)
 //
 // Le monde est fait de petits pixels (zoom réglable, ~2,4 px à l'écran) : chaque outil peut les enlever un par un.
 // - On part d'une clairière, au pied d'une falaise ; l'entrée de la mine est dans la paroi.
@@ -11,7 +11,7 @@
 // Tout est dessiné dans une petite image (1 pixel = 1 pixel du monde), agrandie ×3 sans flou.
 // =========================================================
 
-const VERSION = "0.13.0";
+const VERSION = "0.14.0";
 
 // ---------- 1. Le monde ----------
 let P = 3;                            // taille d'un pixel du monde à l'écran (px) : réglable (Zoom)
@@ -46,12 +46,12 @@ const BUTINS = {
   piece:     { nom: "Pièce ancienne", val: 35, c: [240, 204, 96] },
   rubis:     { nom: "Rubis",          val: 60, c: [244, 72, 84] },
   bombe:     { nom: "Bombe",          val: 0,  c: [70, 66, 92] },
-  // Miettes : chaque pixel cassé en lâche une (comme dans l'ancienne version). Elles se comptent, sans valeur.
-  m_terre:   { nom: "Terre",          val: 0,  c: [139, 94, 60],   miette: true },
-  m_roche:   { nom: "Roche",          val: 0,  c: [118, 116, 124], miette: true },
-  m_dure:    { nom: "Roche dure",     val: 0,  c: [88, 84, 98],    miette: true },
-  m_mousse:  { nom: "Mousse",         val: 0,  c: [96, 140, 70],   miette: true },
-  m_minerai: { nom: "Poussière de minerai", val: 0, c: [236, 188, 70], miette: true }
+  // Blocs de matière : en creusant, des petits cubes sautent du mur (1 pour ~4 pixels, parfois un gros = 4). val = par unité.
+  m_terre:   { nom: "Terre",          val: 1,  c: [139, 94, 60],   miette: true },
+  m_roche:   { nom: "Roche",          val: 2,  c: [118, 116, 124], miette: true },
+  m_dure:    { nom: "Roche dure",     val: 3,  c: [88, 84, 98],    miette: true },
+  m_mousse:  { nom: "Mousse",         val: 1,  c: [96, 140, 70],   miette: true },
+  m_minerai: { nom: "Minerai", val: 4, c: [236, 188, 70], miette: true }
 };
 const MIETTE = { [TERRE]: "m_terre", [ROCHE]: "m_roche", [DURE]: "m_dure", [MOUSSE]: "m_mousse", [MINERAI]: "m_minerai" };
 
@@ -308,9 +308,15 @@ const JAMBES = [["..KDKKDK..", "..KK..KK.."], [".KDK..KDK.", ".KK....KK."]];
 const PAL = { K: [29, 23, 38], H: [255, 224, 138], Y: [242, 178, 50], y: [194, 127, 26], L: [255, 246, 200], N: [107, 70, 48], S: [246, 207, 164], s: [214, 160, 115], W: [255, 255, 255], E: [38, 48, 79], P: [242, 154, 134], R: [217, 86, 60], B: [79, 134, 204], b: [51, 95, 158], G: [255, 213, 106], D: [90, 61, 46] };
 const m = { x: DEPART.x, y: DEPART.y, vx: 0, vy: 0, px: 0, py: 0, sens: 1, pas: 0, recul: [0, 0] };
 // Collision : seulement les pieds (vue de dessus)
+// Un mur a une « face avant » dessinée sous lui (FH pixels de haut) : c'est aussi du mur.
+// Donc les pieds sont bloqués s'ils touchent un mur OU la face d'un mur situé juste au-dessus
+// (avant, le mineur grimpait sur cette face en montant).
 function touche(x, y) {
-  for (let cy = Math.floor(y - 3); cy <= Math.floor(y - 0.01); cy++)
-    for (let cx = Math.floor(x - 3); cx <= Math.floor(x + 2.99); cx++) if (solide(cx, cy)) return true;
+  const haut = Math.floor(y - 3);
+  for (let cx = Math.floor(x - 3); cx <= Math.floor(x + 2.99); cx++) {
+    for (let cy = haut; cy <= Math.floor(y - 0.01); cy++) if (solide(cx, cy)) return true;
+    for (let k = 1; k <= FHMAX; k++) { const t = typeEn(cx, haut - k); if (t !== VIDE) { if (k <= FH[t]) return true; break; } }
+  }
   return false;
 }
 function bouger(dx, dy) {
@@ -563,20 +569,27 @@ function lacherButin(x, y, k) {
   const a = Math.random() * Math.PI * 2, v = 20 + Math.random() * 30;
   butins.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k, t: 0, n: 1 });
 }
-// Une miette par pixel cassé, de la couleur du pixel. Au-delà de 700 par terre, on les regroupe.
+// Blocs de matière : environ 1 pixel cassé sur 4 fait sauter un petit cube 2×2 (vaut 1 unité),
+// et de temps en temps un gros cube 4×4 (vaut 4 unités). Ils sautillent, puis l'aimant les attire.
+// Au-delà de 700 par terre, on les regroupe (sinon le téléphone ralentit).
 const MAX_BUTINS = 700;
 function miette(x, y, t, i) {
   const k = MIETTE[t]; if (!k) return;
+  const r = Math.random(), gros = r < 0.025;
+  if (!gros && r > 0.25) return;
+  const n = gros ? 4 : 1;
   if (butins.length >= MAX_BUTINS) {
     for (let j = butins.length - 1; j >= butins.length - 80; j--) {
       const b = butins[j];
-      if (b.k === k && Math.abs(b.x - x) < 5 && Math.abs(b.y - y) < 5) { b.n++; return; }
+      if (b.k === k && Math.abs(b.x - x) < 6 && Math.abs(b.y - y) < 6) { b.n += n; if (b.n >= 4) b.taille = 4; return; }
     }
-    sac.comptes[k] = (sac.comptes[k] || 0) + 1; sacASauver = true; // sinon : directement dans le sac
+    sac.comptes[k] = (sac.comptes[k] || 0) + n; sacASauver = true; // sinon : directement dans le sac
     return;
   }
-  const a = Math.random() * Math.PI * 2, v = 8 + Math.random() * 26, e = 0.85 + Math.random() * 0.35;
-  butins.push({ x: x + 0.5, y: y + 0.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k, t: 0, n: 1, c: [coul[i * 3] * e, coul[i * 3 + 1] * e, coul[i * 3 + 2] * e] });
+  const a = Math.random() * Math.PI * 2, v = 20 + Math.random() * 45, e = 0.9 + Math.random() * 0.25;
+  butins.push({ x: x + 0.5, y: y + 0.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k, t: 0, n, taille: gros ? 4 : 2,
+    h: 0, vh: 40 + Math.random() * 40, // petit saut en l'air (hauteur h), qui rebondit
+    c: [coul[i * 3] * e, coul[i * 3 + 1] * e, coul[i * 3 + 2] * e] });
 }
 // Rang de rareté (0 = rien de spécial) : règle la force des effets
 const RANG = { pepite: 1, eclat: 2, amethyste: 3, piece: 4, rubis: 5 };
@@ -607,8 +620,12 @@ function majButins(dt) {
   for (let k = butins.length - 1; k >= 0; k--) {
     const b = butins[k];
     b.t += dt;
+    if (b.vh !== undefined && (b.h > 0 || b.vh)) { // saut des blocs : retombe et rebondit un peu
+      b.vh -= 260 * dt; b.h += b.vh * dt;
+      if (b.h <= 0) { b.h = 0; b.vh = Math.abs(b.vh) > 25 ? -b.vh * 0.4 : 0; }
+    }
     const dx = m.x - b.x, dy = m.y - 6 - b.y, d = Math.hypot(dx, dy);
-    if (b.t > 0.35 && d < R) { // l'aimant l'attire (de plus en plus vite)
+    if (b.t > (b.vh !== undefined ? 0.8 : 0.35) && d < R) { // l'aimant l'attire (de plus en plus vite) ; les blocs restent un peu par terre avant
       const v = 60 + (R - d) * 8;
       b.vx = dx / d * v; b.vy = dy / d * v;
       b.x += b.vx * dt; b.y += b.vy * dt;
@@ -625,11 +642,13 @@ function majButins(dt) {
 let dernierTic = 0;
 function ramasserMiette(k, n) {
   sac.comptes[k] = (sac.comptes[k] || 0) + n; sacASauver = true;
-  const t = textes.find(t => t.k === k && t.t < 0.45);
-  if (t) { t.n += n; t.txt = "+" + t.n; t.t = Math.min(t.t, 0.12); }
-  else { const c = BUTINS[k].c; textes.push({ x: m.x + (Math.random() - 0.5) * 10, y: m.y - 20, txt: "+" + n, n, k, c: "rgb(" + c.map(v => Math.min(255, v * 1.5) | 0).join(",") + ")", t: 0, petit: true }); }
+  const v = n * BUTINS[k].val, t = textes.find(t => t.k === k && t.t < 0.45);
+  if (t) { t.n += v; t.txt = "+" + t.n; t.t = Math.min(t.t, 0.12); }
+  else { const c = BUTINS[k].c; textes.push({ x: m.x + (Math.random() - 0.5) * 10, y: m.y - 20, txt: "+" + v, n: v, k, c: "rgb(" + c.map(v => Math.min(255, v * 1.5) | 0).join(",") + ")", t: 0, petit: true }); }
+  document.getElementById("sac-total").textContent = totalSac();
   const ms = performance.now();
-  if (ms - dernierTic > 35) { dernierTic = ms; note(1300 + Math.random() * 200 + serie * 30, "triangle", 0.025, 0.04); }
+  if (n >= 4) { note(880 + Math.random() * 60, "square", 0.05, 0.07); vib(10, 5); popBouton(bSac); } // gros bloc : « clac » plus franc
+  else if (ms - dernierTic > 35) { dernierTic = ms; note(1300 + Math.random() * 200 + serie * 30, "triangle", 0.03, 0.04); }
 }
 function ramasser(k, n = 1) {
   const B = BUTINS[k];
@@ -841,8 +860,8 @@ function lumiereEn(x, y) {
   return l;
 }
 
-function dessinerMonde(temps) {
-  const ox = Math.floor(camX), oy = Math.floor(camY);
+// Le fond (murs, sol, lumière), pixel par pixel. Fonction à part : plus petite, le navigateur l'optimise mieux.
+function dessinerFond(temps, ox, oy) {
   const Ls = lumieres.filter(L => L[0] + L[2] > ox && L[0] - L[2] < ox + BW && L[1] + L[2] > oy && L[1] - L[2] < oy + BH);
   const Lr = []; // lumières qui touchent la ligne en cours (plus rapide : on ne teste que celles-là)
   for (let by = 0; by < BH; by++) {
@@ -908,6 +927,10 @@ function dessinerMonde(temps) {
       pix[by * BW + bx] = pack(r, g, b);
     }
   }
+}
+function dessinerMonde(temps) {
+  const ox = Math.floor(camX), oy = Math.floor(camY);
+  dessinerFond(temps, ox, oy);
   const plot = (x, y, c, k = 1) => { const px = Math.floor(x) - ox, py = Math.floor(y) - oy; if (px >= 0 && py >= 0 && px < BW && py < BH) pix[py * BW + px] = pack(c[0] * k, c[1] * k, c[2] * k); };
   const plotAdd = (x, y, c, a) => {
     const px = Math.floor(x) - ox, py = Math.floor(y) - oy;
@@ -920,10 +943,16 @@ function dessinerMonde(temps) {
   for (const b of butins) {
     const B = BUTINS[b.k], l = Math.max(0.55, Math.min(1.3, lumiereEn(b.x, b.y)));
     if (b.k === "bombe") { dessinerBombe(b.x, b.y, 0, l, temps, false); continue; }
-    if (B.miette) { // miette : 1 pixel (2 si elle en regroupe plusieurs), un peu plus claire que le mur
-      const ll = Math.max(0.75, l);
-      plot(b.x, b.y, b.c, ll);
-      if (b.n > 1) plot(b.x + 1, b.y, b.c, ll * 0.8);
+    if (B.miette) { // bloc : petit cube (dessus clair, côté sombre), ombre au sol quand il saute
+      const ll = Math.max(0.8, l), s = b.taille || 2, c = b.c, x0 = Math.floor(b.x - s / 2), y0 = Math.floor(b.y - s / 2 - (b.h || 0));
+      if (b.h > 0.5) ombre(b.x, b.y + s / 2, s >> 1);
+      const clair = [c[0] * 1.35, c[1] * 1.35, c[2] * 1.35], sombre = [c[0] * 0.6, c[1] * 0.6, c[2] * 0.6];
+      if (s === 2) { plot(x0, y0, clair, ll); plot(x0 + 1, y0, c, ll); plot(x0, y0 + 1, c, ll); plot(x0 + 1, y0 + 1, sombre, ll); }
+      else for (let j = -1; j <= s; j++) for (let q = -1; q <= s; q++) {
+        const bord = j < 0 || q < 0 || j === s || q === s;
+        if (bord) { if ((j < 0 || j === s) && (q < 0 || q === s)) continue; plot(x0 + q, y0 + j, [29, 23, 38]); } // contour d'encre (coins arrondis)
+        else plot(x0 + q, y0 + j, j === 0 ? clair : j === s - 1 ? sombre : c, ll);
+      }
       continue;
     }
     const c = B.c, cl = [c[0] * 1.4, c[1] * 1.4, c[2] * 1.4], fo = [c[0] * 0.65, c[1] * 0.65, c[2] * 0.65];
